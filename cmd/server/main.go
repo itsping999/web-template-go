@@ -16,6 +16,7 @@ import (
 	"github.com/go-kratos/kratos/v2/middleware/tracing"
 	"github.com/go-kratos/kratos/v2/transport/grpc"
 	"github.com/go-kratos/kratos/v2/transport/http"
+	"github.com/wyuhsin/web-template-go/internal/server"
 
 	_ "go.uber.org/automaxprocs"
 )
@@ -33,7 +34,7 @@ var (
 )
 
 func init() {
-	flag.StringVar(&flagconf, "conf", "../../configs", "config path, eg: -conf config.yaml")
+	flag.StringVar(&flagconf, "conf", "./configs", "config path, eg: -conf config.yaml")
 }
 
 func newApp(
@@ -43,6 +44,8 @@ func newApp(
 	rs *rabbitmq.Server,
 	ms *mqtt.Server,
 	ws *websocket.Server,
+	tcp *server.TCPServer,
+	udp *server.UDPServer,
 ) *kratos.App {
 	return kratos.New(
 		kratos.ID(id),
@@ -56,6 +59,8 @@ func newApp(
 			rs,
 			ms,
 			ws,
+			tcp,
+			udp,
 		),
 	)
 }

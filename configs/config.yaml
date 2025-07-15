@@ -13,6 +13,12 @@ server:
     timeout: 1s
   mqtt:
     addr: 0.0.0.0:1883
+  tcp:
+    addr: 0.0.0.0:9001
+    timeout: 1s
+  udp:
+    addr: 0.0.0.0:9002
+    timeout: 1s
 
 data:
   database:

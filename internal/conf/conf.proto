@@ -31,11 +31,23 @@ message Server {
 
   message MQTT { string addr = 1; }
 
+  message TCP {
+    string addr = 1;
+    google.protobuf.Duration timeout = 2;
+  }
+
+  message UDP {
+    string addr = 1;
+    google.protobuf.Duration timeout = 2;
+  }
+
   HTTP http = 1;
   GRPC grpc = 2;
   RabbitMQ rabbitmq = 3;
   Websocket ws = 4;
   MQTT mqtt = 5;
+  TCP tcp = 6;
+  UDP udp = 7;
 }
 
 message Data {

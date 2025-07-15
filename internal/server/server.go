@@ -1,6 +1,8 @@
 package server
 
 import (
+	"github.com/wyuhsin/web-template-go/internal/conf"
+
 	"github.com/google/wire"
 )
 
@@ -11,4 +13,9 @@ var ProviderSet = wire.NewSet(
 	NewWebsocketServer,
 	NewMQTTServer,
 	NewRabbitMQServer,
+	NewTCPServer,
+	NewUDPServer,
+
+	wire.FieldsOf(new(*conf.Server), "Http"),
+	wire.FieldsOf(new(*conf.Server), "Grpc"),
 )

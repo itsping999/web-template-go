@@ -24,6 +24,7 @@ import (
 
 // wireApp init kratos application.
 func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger) (*kratos.App, func(), error) {
+	server_GRPC := confServer.Grpc
 	dataData, cleanup, err := data.NewData(confData, logger)
 	if err != nil {
 		return nil, nil, err
@@ -31,12 +32,17 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger) (*
 	greeterRepo := data.NewGreeterRepo(dataData, logger)
 	greeterUsecase := biz.NewGreeterUsecase(greeterRepo, logger)
 	greeterService := service.NewGreeterService(logger, greeterUsecase)
-	grpcServer := server.NewGRPCServer(confServer, logger, greeterService)
-	httpServer := server.NewHTTPServer(confServer, logger, greeterService)
+	grpcServer := server.NewGRPCServer(server_GRPC, logger, greeterService)
+	server_HTTP := confServer.Http
+	httpServer := server.NewHTTPServer(server_HTTP, logger, greeterService)
 	rabbitmqServer := server.NewRabbitMQServer(confServer, logger, greeterService)
 	mqttServer := server.NewMQTTServer(confServer, logger, greeterService)
 	websocketServer := server.NewWebsocketServer(confServer, logger, greeterService)
-	app := newApp(logger, grpcServer, httpServer, rabbitmqServer, mqttServer, websocketServer)
+	server_TCP := confServer.Tcp
+	tcpServer := server.NewTCPServer(server_TCP, logger)
+	server_UDP := confServer.Udp
+	udpServer := server.NewUDPServer(server_UDP, logger)
+	app := newApp(logger, grpcServer, httpServer, rabbitmqServer, mqttServer, websocketServer, tcpServer, udpServer)
 	return app, func() {
 		cleanup()
 	}, nil

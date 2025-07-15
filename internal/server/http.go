@@ -14,7 +14,7 @@ import (
 
 // NewHTTPServer new an HTTP server.
 func NewHTTPServer(
-	c *conf.Server,
+	c *conf.Server_HTTP,
 	logger log.Logger,
 	greeter *service.GreeterService,
 ) *http.Server {
@@ -25,14 +25,14 @@ func NewHTTPServer(
 			validate.Validator(),
 		),
 	}
-	if c.Http.Network != "" {
-		opts = append(opts, http.Network(c.Http.Network))
+	if c.Network != "" {
+		opts = append(opts, http.Network(c.Network))
 	}
-	if c.Http.Addr != "" {
-		opts = append(opts, http.Address(c.Http.Addr))
+	if c.Addr != "" {
+		opts = append(opts, http.Address(c.Addr))
 	}
-	if c.Http.Timeout != nil {
-		opts = append(opts, http.Timeout(c.Http.Timeout.AsDuration()))
+	if c.Timeout != nil {
+		opts = append(opts, http.Timeout(c.Timeout.AsDuration()))
 	}
 	srv := http.NewServer(opts...)
 	v1.RegisterGreeterHTTPServer(srv, greeter)

@@ -40,7 +40,10 @@ func NewGreeterUsecase(repo GreeterRepo, logger log.Logger) *GreeterUsecase {
 }
 
 // CreateGreeter creates a Greeter, and returns the new Greeter.
-func (uc *GreeterUsecase) CreateGreeter(ctx context.Context, g *Greeter) (*Greeter, error) {
+func (uc *GreeterUsecase) CreateGreeter(
+	ctx context.Context,
+	g *Greeter,
+) (*Greeter, error) {
 	uc.log.WithContext(ctx).Infof("CreateGreeter: %v", g.Hello)
 	return uc.repo.Save(ctx, g)
 }

@@ -8,10 +8,11 @@ package main
 
 import (
 	"github.com/go-kratos/kratos/v2"
-	"github.com/go-kratos/kratos/v2/log"
+	"github.com/sirupsen/logrus"
 	"github.com/wyuhsin/web-template-go/internal/biz"
-	"github.com/wyuhsin/web-template-go/internal/conf"
 	"github.com/wyuhsin/web-template-go/internal/data"
+	"github.com/wyuhsin/web-template-go/internal/pkg/dbx"
+	"github.com/wyuhsin/web-template-go/internal/pkg/tracingx"
 	"github.com/wyuhsin/web-template-go/internal/server"
 	"github.com/wyuhsin/web-template-go/internal/service"
 )
@@ -23,27 +24,36 @@ import (
 // Injectors from wire.go:
 
 // wireApp init kratos application.
-func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger) (*kratos.App, func(), error) {
-	server_GRPC := confServer.Grpc
-	dataData, cleanup, err := data.NewData(confData, logger)
+func wireApp(config *server.Config, dataConfig *data.Config, tracingxConfig *tracingx.Config, entry *logrus.Entry) (*kratos.App, func(), error) {
+	grpcConfig := &config.GRPC
+	mySQLConfig := dataConfig.MySQL
+	mySQLDB, cleanup, err := dbx.NewMySQLDB(mySQLConfig, entry)
 	if err != nil {
 		return nil, nil, err
 	}
-	greeterRepo := data.NewGreeterRepo(dataData, logger)
-	greeterUsecase := biz.NewGreeterUsecase(greeterRepo, logger)
-	greeterService := service.NewGreeterService(logger, greeterUsecase)
-	grpcServer := server.NewGRPCServer(server_GRPC, logger, greeterService)
-	server_HTTP := confServer.Http
-	httpServer := server.NewHTTPServer(server_HTTP, logger, greeterService)
-	rabbitmqServer := server.NewRabbitMQServer(confServer, logger, greeterService)
-	mqttServer := server.NewMQTTServer(confServer, logger, greeterService)
-	websocketServer := server.NewWebsocketServer(confServer, logger, greeterService)
-	server_TCP := confServer.Tcp
-	tcpServer := server.NewTCPServer(server_TCP, logger)
-	server_UDP := confServer.Udp
-	udpServer := server.NewUDPServer(server_UDP, logger)
-	app := newApp(logger, grpcServer, httpServer, rabbitmqServer, mqttServer, websocketServer, tcpServer, udpServer)
+	redisConfig := dataConfig.Redis
+	client, cleanup2, err := dbx.NewRedisClient(redisConfig, entry)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	greeterRepo := data.NewGreeterRepo(mySQLDB, client, entry)
+	greeterUsecase := biz.NewGreeterUsecase(greeterRepo, entry)
+	greeterService := service.NewGreeterService(entry, greeterUsecase)
+	grpcServer := server.NewGRPCServer(grpcConfig, tracingxConfig, entry, greeterService)
+	httpConfig := &config.HTTP
+	systemService := service.NewSystemService()
+	httpServer := server.NewHTTPServer(httpConfig, tracingxConfig, entry, greeterService, systemService)
+	rabbitmqServer := server.NewRabbitMQServer(config, entry, greeterService)
+	mqttServer := server.NewMQTTServer(config, entry, greeterService)
+	websocketServer := server.NewWebsocketServer(config, entry, greeterService)
+	tcpConfig := &config.TCP
+	tcpServer := server.NewTCPServer(tcpConfig, entry)
+	udpConfig := &config.UDP
+	udpServer := server.NewUDPServer(udpConfig, entry)
+	app := newApp(entry, grpcServer, httpServer, rabbitmqServer, mqttServer, websocketServer, tcpServer, udpServer)
 	return app, func() {
+		cleanup2()
 		cleanup()
 	}, nil
 }

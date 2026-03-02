@@ -5,7 +5,6 @@ API_PROTO_DIR := ./api
 CURR_DIR := $(shell pwd)
 CMD_DIR := ./cmd/server
 
-INTERNAL_PROTO_FILES=$(shell find internal -name *.proto)
 API_PROTO_FILES=$(shell find api -name *.proto)
 
 ARM_DOCKER_BUILD_IMAGE := docker.io/wyuhsin/go-cross-multiarch:go1.24-ubuntu16.04-20250625
@@ -30,12 +29,9 @@ init:
 	go install github.com/favadi/protoc-go-inject-tag@latest
 
 .PHONY: config
-# generate internal proto
+# config is now plain Go structs (no protobuf generation)
 config:
-	protoc --proto_path=./internal \
-		--proto_path=./third_party \
-		--go_out=paths=source_relative:./internal \
-		$(INTERNAL_PROTO_FILES)
+	@echo "skip: config no longer generated from protobuf"
 
 .PHONY: api
 # generate api proto

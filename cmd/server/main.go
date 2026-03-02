@@ -4,18 +4,20 @@ import (
 	"flag"
 	"os"
 
+	"github.com/sirupsen/logrus"
 	"github.com/tx7do/kratos-transport/transport/mqtt"
 	"github.com/tx7do/kratos-transport/transport/rabbitmq"
 	"github.com/tx7do/kratos-transport/transport/websocket"
-	"github.com/wyuhsin/web-template-go/internal/conf"
 
 	"github.com/go-kratos/kratos/v2"
 	"github.com/go-kratos/kratos/v2/config"
 	"github.com/go-kratos/kratos/v2/config/file"
-	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/middleware/tracing"
 	"github.com/go-kratos/kratos/v2/transport/grpc"
 	"github.com/go-kratos/kratos/v2/transport/http"
+	"github.com/wyuhsin/web-template-go/internal/conf"
+	"github.com/wyuhsin/web-template-go/internal/pkg/logx"
+	"github.com/wyuhsin/web-template-go/internal/pkg/tracingx"
 	"github.com/wyuhsin/web-template-go/internal/server"
 
 	_ "go.uber.org/automaxprocs"
@@ -29,8 +31,7 @@ var (
 	Version string
 	// flagconf is the config flag.
 	flagconf string
-
-	id, _ = os.Hostname()
+	id, _    = os.Hostname()
 )
 
 func init() {
@@ -38,7 +39,7 @@ func init() {
 }
 
 func newApp(
-	logger log.Logger,
+	logger *logrus.Entry,
 	gs *grpc.Server,
 	hs *http.Server,
 	rs *rabbitmq.Server,
@@ -52,7 +53,7 @@ func newApp(
 		kratos.Name(Name),
 		kratos.Version(Version),
 		kratos.Metadata(map[string]string{}),
-		kratos.Logger(logger),
+		kratos.Logger(logx.NewKratosLogger(logger)),
 		kratos.Server(
 			gs,
 			hs,
@@ -67,15 +68,6 @@ func newApp(
 
 func main() {
 	flag.Parse()
-	logger := log.With(log.NewStdLogger(os.Stdout),
-		"ts", log.DefaultTimestamp,
-		"caller", log.DefaultCaller,
-		"service.id", id,
-		"service.name", Name,
-		"service.version", Version,
-		"trace.id", tracing.TraceID(),
-		"span.id", tracing.SpanID(),
-	)
 	c := config.New(
 		config.WithSource(
 			file.NewSource(flagconf),
@@ -92,7 +84,23 @@ func main() {
 		panic(err)
 	}
 
-	app, cleanup, err := wireApp(bc.Server, bc.Data, logger)
+	baseLogger := logx.NewWithOptions(bc.Logger)
+
+	logger := logx.NewEntry(baseLogger, logrus.Fields{
+		"service.id":      id,
+		"service.name":    Name,
+		"service.version": Version,
+		"trace.id":        tracing.TraceID(),
+		"span.id":         tracing.SpanID(),
+	})
+
+	tracingCleanup, err := tracingx.Init(&bc.Tracing, Name, Version, logger)
+	if err != nil {
+		panic(err)
+	}
+	defer tracingCleanup()
+
+	app, cleanup, err := wireApp(&bc.Server, &bc.Data, &bc.Tracing, logger)
 	if err != nil {
 		panic(err)
 	}

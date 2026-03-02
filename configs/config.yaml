@@ -20,11 +20,108 @@ server:
     addr: 0.0.0.0:9002
     timeout: 1s
 
+tracing:
+  enabled: false
+  exporter: otlp_grpc
+  endpoint: 127.0.0.1:4317
+  insecure: true
+  sampler: parentbased_traceidratio
+  ratio: 1.0
+  timeout: 3s
+  service_name: ""
+  headers: {}
+
+logger:
+  level: info
+  format: json
+  caller: false
+  filename: ./logs/app.log
+  max_size_mb: 100
+  max_backups: 7
+  max_age_days: 30
+  compress: true
+  to_stdout: true
+  local_time: true
+
 data:
-  database:
-    driver: mysql
+  mysql:
+    enabled: false
     source: root:root@tcp(127.0.0.1:3306)/test?parseTime=True&loc=Local
+    max_open_conns: 20
+    max_idle_conns: 10
+    conn_max_lifetime: 30m
+    conn_max_idle_time: 10m
+    ping_timeout: 3s
+    prepare_stmt: true
+    skip_default_transaction: false
+    disable_nested_transaction: false
+    table_prefix: ""
+    singular_table: false
+  postgres:
+    enabled: false
+    source: postgres://postgres:postgres@127.0.0.1:5432/test?sslmode=disable
+    max_open_conns: 20
+    max_idle_conns: 10
+    conn_max_lifetime: 30m
+    conn_max_idle_time: 10m
+    ping_timeout: 3s
+  mssql:
+    enabled: false
+    source: sqlserver://sa:Your_password123@127.0.0.1:1433?database=test
+    max_open_conns: 20
+    max_idle_conns: 10
+    conn_max_lifetime: 30m
+    conn_max_idle_time: 10m
+    ping_timeout: 3s
+  clickhouse:
+    enabled: false
+    source: clickhouse://127.0.0.1:9000?database=default&username=default&password=
+    max_open_conns: 20
+    max_idle_conns: 10
+    conn_max_lifetime: 30m
+    conn_max_idle_time: 10m
+    ping_timeout: 3s
+  sqlite:
+    enabled: false
+    source: file:test.db?cache=shared
+    max_open_conns: 1
+    max_idle_conns: 1
+    conn_max_lifetime: 30m
+    conn_max_idle_time: 10m
+    ping_timeout: 3s
+  gaussdb:
+    enabled: false
+    source: host=127.0.0.1 user=gaussdb password=gaussdb dbname=test port=5432 sslmode=disable
+    max_open_conns: 20
+    max_idle_conns: 10
+    conn_max_lifetime: 30m
+    conn_max_idle_time: 10m
+    ping_timeout: 3s
   redis:
+    enabled: true
+    network: tcp
     addr: 127.0.0.1:6379
+    username: ""
+    password: ""
+    db: 0
+    pool_size: 10
+    dial_timeout: 1s
+    min_idle_conns: 2
+    max_retries: 3
+    pool_timeout: 2s
+    idle_timeout: 5m
+    max_conn_age: 30m
     read_timeout: 0.2s
     write_timeout: 0.2s
+  mongodb:
+    enabled: false
+    uri: mongodb://127.0.0.1:27017
+    connect_timeout: 5s
+    ping_timeout: 3s
+    min_pool_size: 2
+    max_pool_size: 20
+    server_selection_timeout: 5s
+    socket_timeout: 10s
+    username: ""
+    password: ""
+    auth_source: admin

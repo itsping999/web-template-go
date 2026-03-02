@@ -3,26 +3,31 @@ package server
 import (
 	"context"
 	"net"
+	"time"
 
-	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/transport"
-	"github.com/wyuhsin/web-template-go/internal/conf"
+	"github.com/sirupsen/logrus"
 )
 
 var (
 	_ transport.Server = (*TCPServer)(nil)
 )
 
-type TCPServer struct {
-	lis    net.Listener
-	log    *log.Helper
-	c      *conf.Server_TCP
+type TCPConfig struct {
+	Addr    string        `json:"addr" yaml:"addr"`
+	Timeout time.Duration `json:"timeout" yaml:"timeout"`
 }
 
-func NewTCPServer(c *conf.Server_TCP, logger log.Logger) *TCPServer {
+type TCPServer struct {
+	lis net.Listener
+	log *logrus.Entry
+	c   *TCPConfig
+}
+
+func NewTCPServer(c *TCPConfig, logger *logrus.Entry) *TCPServer {
 	srv := &TCPServer{
-		log:    log.NewHelper(logger),
-		c:      c,
+		log: logger.WithField("module", "server/tcp"),
+		c:   c,
 	}
 	return srv
 }

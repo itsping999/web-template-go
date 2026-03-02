@@ -2,18 +2,25 @@ package server
 
 import (
 	"fmt"
-	"github.com/go-kratos/kratos/v2/log"
+	"time"
+
+	"github.com/sirupsen/logrus"
 	"github.com/tx7do/kratos-transport/transport/websocket"
 
-	"github.com/wyuhsin/web-template-go/internal/conf"
 	"github.com/wyuhsin/web-template-go/internal/service"
 )
 
+type WebsocketConfig struct {
+	Addr    string        `json:"addr" yaml:"addr"`
+	Path    string        `json:"path" yaml:"path"`
+	Timeout time.Duration `json:"timeout" yaml:"timeout"`
+}
+
 // NewWebsocketServer create a websocket server.
-func NewWebsocketServer(c *conf.Server, _ log.Logger, svc *service.GreeterService) *websocket.Server {
+func NewWebsocketServer(c *Config, _ *logrus.Entry, svc *service.GreeterService) *websocket.Server {
 	srv := websocket.NewServer(
-		websocket.WithAddress(c.Ws.Addr),
-		websocket.WithPath(c.Ws.Path),
+		websocket.WithAddress(c.WS.Addr),
+		websocket.WithPath(c.WS.Path),
 		websocket.WithConnectHandle(svc.OnWebsocketConnect),
 		websocket.WithCodec("json"),
 	)

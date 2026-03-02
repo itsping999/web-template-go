@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/sirupsen/logrus"
 	"github.com/tx7do/kratos-transport/broker"
 	"github.com/tx7do/kratos-transport/transport/rabbitmq"
-	"github.com/wyuhsin/web-template-go/internal/conf"
 	"github.com/wyuhsin/web-template-go/internal/service"
-
-	"github.com/go-kratos/kratos/v2/log"
 )
 
 const (
@@ -17,13 +15,17 @@ const (
 	ROUTING_KEY = "server.greeter.routingkey"
 )
 
+type RabbitMQConfig struct {
+	Addr string `json:"addr" yaml:"addr"`
+}
+
 func NewRabbitMQServer(
-	c *conf.Server,
-	logger log.Logger,
+	c *Config,
+	_ *logrus.Entry,
 	greeter *service.GreeterService,
 ) *rabbitmq.Server {
 	srv := rabbitmq.NewServer(
-		rabbitmq.WithAddress([]string{c.Rabbitmq.Addr}),
+		rabbitmq.WithAddress([]string{c.RabbitMQ.Addr}),
 		rabbitmq.WithExchange(EXCHANGE, true),
 		rabbitmq.WithCodec("json"),
 	)

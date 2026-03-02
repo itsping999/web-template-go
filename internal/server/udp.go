@@ -3,11 +3,16 @@ package server
 import (
 	"context"
 	"net"
+	"time"
 
-	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/transport"
-	"github.com/wyuhsin/web-template-go/internal/conf"
+	"github.com/sirupsen/logrus"
 )
+
+type UDPConfig struct {
+	Addr    string        `json:"addr" yaml:"addr"`
+	Timeout time.Duration `json:"timeout" yaml:"timeout"`
+}
 
 var (
 	_ transport.Server = (*UDPServer)(nil)
@@ -15,13 +20,13 @@ var (
 
 type UDPServer struct {
 	conn *net.UDPConn
-	log  *log.Helper
-	c    *conf.Server_UDP
+	log  *logrus.Entry
+	c    *UDPConfig
 }
 
-func NewUDPServer(c *conf.Server_UDP, logger log.Logger) *UDPServer {
+func NewUDPServer(c *UDPConfig, logger *logrus.Entry) *UDPServer {
 	srv := &UDPServer{
-		log: log.NewHelper(logger),
+		log: logger.WithField("module", "server/udp"),
 		c:   c,
 	}
 	return srv

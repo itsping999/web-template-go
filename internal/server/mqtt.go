@@ -4,24 +4,27 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-kratos/kratos/v2/log"
+	"github.com/sirupsen/logrus"
 	"github.com/tx7do/kratos-transport/transport/mqtt"
 
 	"github.com/tx7do/kratos-transport/broker"
-	"github.com/wyuhsin/web-template-go/internal/conf"
 	"github.com/wyuhsin/web-template-go/internal/service"
 )
 
+type MQTTConfig struct {
+	Addr string `json:"addr" yaml:"addr"`
+}
+
 // NewMQTTServer create a mqtt server.
 func NewMQTTServer(
-	c *conf.Server,
-	logger log.Logger,
+	c *Config,
+	_ *logrus.Entry,
 	svc *service.GreeterService,
 ) *mqtt.Server {
 	ctx := context.Background()
 
 	srv := mqtt.NewServer(
-		mqtt.WithAddress([]string{c.Mqtt.Addr}),
+		mqtt.WithAddress([]string{c.MQTT.Addr}),
 		mqtt.WithCodec("json"),
 	)
 

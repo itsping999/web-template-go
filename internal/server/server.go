@@ -9,6 +9,4 @@ var ProviderSet = wire.NewSet(
 	NewWebsocketServer,
 	NewMQTTServer,
 	NewRabbitMQServer,
-	NewTCPServer,
-	NewUDPServer,
 )

@@ -3,40 +3,43 @@ package dbx
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/go-kratos/kratos/v2/log"
 	"github.com/redis/go-redis/v9"
-	"github.com/sirupsen/logrus"
 )
 
 type RedisConfig struct {
-	Enabled      bool
-	Network      string
-	Addr         string
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-	Username     string
-	Password     string
-	DB           int32
-	PoolSize     int32
-	DialTimeout  time.Duration
-	MinIdleConns int32
-	MaxRetries   int32
-	PoolTimeout  time.Duration
-	IdleTimeout  time.Duration
-	MaxConnAge   time.Duration
+	Enabled      bool          `json:"enabled" yaml:"enabled"`
+	Network      string        `json:"network" yaml:"network"`
+	Addr         string        `json:"addr" yaml:"addr"`
+	ReadTimeout  time.Duration `json:"read_timeout" yaml:"read_timeout"`
+	WriteTimeout time.Duration `json:"write_timeout" yaml:"write_timeout"`
+	Username     string        `json:"username" yaml:"username"`
+	Password     string        `json:"password" yaml:"password"`
+	DB           int32         `json:"db" yaml:"db"`
+	PoolSize     int32         `json:"pool_size" yaml:"pool_size"`
+	DialTimeout  time.Duration `json:"dial_timeout" yaml:"dial_timeout"`
+	MinIdleConns int32         `json:"min_idle_conns" yaml:"min_idle_conns"`
+	MaxRetries   int32         `json:"max_retries" yaml:"max_retries"`
+	PoolTimeout  time.Duration `json:"pool_timeout" yaml:"pool_timeout"`
+	IdleTimeout  time.Duration `json:"idle_timeout" yaml:"idle_timeout"`
+	MaxConnAge   time.Duration `json:"max_conn_age" yaml:"max_conn_age"`
 }
 
-func NewRedisClient(cfg RedisConfig, logger *logrus.Entry) (*redis.Client, func(), error) {
+func NewRedisClient(cfg RedisConfig, logger log.Logger) (*redis.Client, func(), error) {
+	if logger == nil {
+		logger = log.NewStdLogger(os.Stdout)
+	}
+	helper := log.NewHelper(log.With(logger, "module", "dbx/redis"))
 	if !cfg.Enabled {
-		return nil, nil, errors.New("redis is not enabled")
+		helper.Info("redis disabled, skip initialization")
+		return nil, func() {}, nil
 	}
 	if strings.TrimSpace(cfg.Addr) == "" {
 		return nil, nil, errors.New("redis.addr is empty")
-	}
-	if logger == nil {
-		logger = logrus.NewEntry(logrus.New())
 	}
 
 	network := cfg.Network
@@ -87,7 +90,6 @@ func NewRedisClient(cfg RedisConfig, logger *logrus.Entry) (*redis.Client, func(
 		return nil, nil, err
 	}
 
-	helper := logger.WithField("module", "dbx")
 	helper.Infof("redis connected: addr=%s", cfg.Addr)
 	cleanup := func() {
 		if err := client.Close(); err != nil {

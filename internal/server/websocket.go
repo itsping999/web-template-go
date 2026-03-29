@@ -1,26 +1,37 @@
 package server
 
 import (
-	"fmt"
-	"time"
+	"strings"
 
-	"github.com/sirupsen/logrus"
+	"github.com/go-kratos/kratos/v2/log"
 	"github.com/tx7do/kratos-transport/transport/websocket"
 
 	"github.com/wyuhsin/web-template-go/internal/service"
 )
 
-type WebsocketConfig struct {
-	Addr    string        `json:"addr" yaml:"addr"`
-	Path    string        `json:"path" yaml:"path"`
-	Timeout time.Duration `json:"timeout" yaml:"timeout"`
+type WebSocketConfig struct {
+	Enabled bool   `json:"enabled" yaml:"enabled"`
+	Addr    string `json:"addr" yaml:"addr"`
+	Path    string `json:"path" yaml:"path"`
 }
 
 // NewWebsocketServer create a websocket server.
-func NewWebsocketServer(c *Config, _ *logrus.Entry, svc *service.GreeterService) *websocket.Server {
+func NewWebsocketServer(
+	rt *WebSocketConfig,
+	_ log.Logger,
+	svc *service.GreeterService,
+) *websocket.Server {
+	if rt == nil || !rt.Enabled {
+		return nil
+	}
+	addr := strings.TrimSpace(rt.Addr)
+	path := strings.TrimSpace(rt.Path)
+	if addr == "" || path == "" {
+		return nil
+	}
 	srv := websocket.NewServer(
-		websocket.WithAddress(c.WS.Addr),
-		websocket.WithPath(c.WS.Path),
+		websocket.WithAddress(addr),
+		websocket.WithPath(path),
 		websocket.WithConnectHandle(svc.OnWebsocketConnect),
 		websocket.WithCodec("json"),
 	)
@@ -29,12 +40,7 @@ func NewWebsocketServer(c *Config, _ *logrus.Entry, svc *service.GreeterService)
 
 	srv.RegisterMessageHandler(1,
 		func(sessionId websocket.SessionID, payload websocket.MessagePayload) error {
-			switch t := payload.(type) {
-			case any:
-				return svc.OnChatMessage(sessionId, t)
-			default:
-				return fmt.Errorf("unsupported type: %T", t)
-			}
+			return svc.OnChatMessage(sessionId, payload)
 		},
 		func() websocket.Any { return struct{}{} },
 	)

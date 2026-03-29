@@ -3,30 +3,31 @@ package dbx
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/go-kratos/kratos/v2/log"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 type MongoConfig struct {
-	Enabled                bool
-	URI                    string
-	ConnectTimeout         time.Duration
-	PingTimeout            time.Duration
-	MinPoolSize            int32
-	MaxPoolSize            int32
-	ServerSelectionTimeout time.Duration
-	SocketTimeout          time.Duration
-	Username               string
-	Password               string
-	AuthSource             string
+	Enabled                bool          `json:"enabled" yaml:"enabled"`
+	URI                    string        `json:"uri" yaml:"uri"`
+	ConnectTimeout         time.Duration `json:"connect_timeout" yaml:"connect_timeout"`
+	PingTimeout            time.Duration `json:"ping_timeout" yaml:"ping_timeout"`
+	MinPoolSize            int32         `json:"min_pool_size" yaml:"min_pool_size"`
+	MaxPoolSize            int32         `json:"max_pool_size" yaml:"max_pool_size"`
+	ServerSelectionTimeout time.Duration `json:"server_selection_timeout" yaml:"server_selection_timeout"`
+	SocketTimeout          time.Duration `json:"socket_timeout" yaml:"socket_timeout"`
+	Username               string        `json:"username" yaml:"username"`
+	Password               string        `json:"password" yaml:"password"`
+	AuthSource             string        `json:"auth_source" yaml:"auth_source"`
 }
 
-func NewMongoClient(cfg MongoConfig, logger *logrus.Entry) (*mongo.Client, func(), error) {
+func NewMongoClient(cfg MongoConfig, logger log.Logger) (*mongo.Client, func(), error) {
 	if !cfg.Enabled {
 		return nil, func() {}, nil
 	}
@@ -34,7 +35,7 @@ func NewMongoClient(cfg MongoConfig, logger *logrus.Entry) (*mongo.Client, func(
 		return nil, nil, errors.New("mongodb.uri is empty")
 	}
 	if logger == nil {
-		logger = logrus.NewEntry(logrus.New())
+		logger = log.NewStdLogger(os.Stdout)
 	}
 
 	connectTimeout := 5 * time.Second
@@ -81,7 +82,7 @@ func NewMongoClient(cfg MongoConfig, logger *logrus.Entry) (*mongo.Client, func(
 		return nil, nil, err
 	}
 
-	helper := logger.WithField("module", "dbx/mongodb")
+	helper := log.NewHelper(log.With(logger, "module", "dbx/mongodb"))
 	helper.Info("mongodb connected")
 	cleanup := func() {
 		disconnectCtx, disconnectCancel := context.WithTimeout(context.Background(), 5*time.Second)

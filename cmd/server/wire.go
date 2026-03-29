@@ -6,26 +6,26 @@
 package main
 
 import (
+	"github.com/go-kratos/kratos/v2/log"
 	"github.com/wyuhsin/web-template-go/internal/biz"
 	"github.com/wyuhsin/web-template-go/internal/data"
-	"github.com/wyuhsin/web-template-go/internal/pkg/dbx"
+	provider "github.com/wyuhsin/web-template-go/internal/pkg"
 	"github.com/wyuhsin/web-template-go/internal/pkg/tracingx"
 	"github.com/wyuhsin/web-template-go/internal/server"
 	"github.com/wyuhsin/web-template-go/internal/service"
 
 	"github.com/go-kratos/kratos/v2"
 	"github.com/google/wire"
-	"github.com/sirupsen/logrus"
 )
 
 // wireApp init kratos application.
-func wireApp(*server.Config, *data.Config, *tracingx.Config, *logrus.Entry) (*kratos.App, func(), error) {
+func wireApp(*server.Config, *data.Config, *tracingx.Config, log.Logger) (*kratos.App, func(), error) {
 	panic(
 		wire.Build(
-			wire.FieldsOf(new(*server.Config), "TCP", "UDP", "HTTP", "GRPC"),
-			wire.FieldsOf(new(*data.Config), "MySQL", "Redis"),
+			wire.FieldsOf(new(*server.Config), "HTTP", "GRPC", "Middleware", "WebSocket", "MQTT", "RabbitMQ"),
+			wire.FieldsOf(new(*data.Config), "Postgres", "Redis", "MongoDB", "Discovery", "RemoteGRPC"),
 			server.ProviderSet,
-			dbx.ProviderSet,
+			provider.ProviderSet,
 			data.ProviderSet,
 			biz.ProviderSet,
 			service.ProviderSet,

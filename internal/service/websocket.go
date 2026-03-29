@@ -22,7 +22,10 @@ func (s *GreeterService) OnWebsocketConnect(
 	}
 }
 
-func (s *GreeterService) OnChatMessage(sessionId websocket.SessionID, msg any) error {
+func (s *GreeterService) OnChatMessage(_ websocket.SessionID, msg any) error {
+	if s.ws == nil {
+		return nil
+	}
 	s.ws.Broadcast(websocket.MessageType(1), msg)
 	return nil
 }

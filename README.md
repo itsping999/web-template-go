@@ -1,51 +1,141 @@
-# Kratos Project Template
+# Web Template Go
 
-## Install Kratos
-```
+云原生微服务模板（Kratos）。
+
+## 技术栈
+
+- 服务协议：HTTP + gRPC
+- 关系型数据库：PostgreSQL
+- 文档数据库：MongoDB
+- 缓存：Redis
+- 服务发现：Kubernetes
+- 可观测：OpenTelemetry (OTLP)
+
+## 项目结构
+
+- `cmd/server`：服务启动入口
+- `internal/server`：传输层（HTTP/gRPC）
+- `internal/service`：应用服务层
+- `internal/biz`：业务用例层
+- `internal/data`：数据访问层
+- `internal/pkg/*`：基础设施组件
+- `configs/config.yaml`：默认配置
+- `tests`：统一测试目录
+
+## 快速开始
+
+### 1. 安装工具
+
+```bash
 go install github.com/go-kratos/kratos/cmd/kratos/v2@latest
+go install github.com/google/wire/cmd/wire@latest
 ```
-## Create a service
-```
-# Create a template project
-kratos new server
 
-cd server
-# Add a proto template
-kratos proto add api/server/server.proto
-# Generate the proto code
-kratos proto client api/server/server.proto
-# Generate the source code of service by proto file
-kratos proto server api/server/server.proto -t internal/service
+### 2. 本地运行
 
-go generate ./...
-go build -o ./bin/ ./...
-./bin/server -conf ./configs
+```bash
+go run ./cmd/server -conf ./configs
 ```
-## Generate other auxiliary files by Makefile
-```
-# Download and update dependencies
-make init
-# Generate API files (include: pb.go, http, grpc, validate, swagger) by proto file
-make api
-# Generate all files
-make all
-```
-## Automated Initialization (wire)
-```
-# install wire
-go get github.com/google/wire/cmd/wire
 
-# generate wire
-cd cmd/server
-wire
+### 3. 运行测试
+
+```bash
+go test ./...
 ```
+
+## 配置说明
+
+默认配置文件：`configs/config.yaml`
+
+关键配置项：
+
+- `server.http` / `server.grpc`：服务监听地址与超时
+- `server.middleware.ratelimit_enabled`：服务端限流开关
+- `data.postgres`：PostgreSQL 连接与连接池
+- `data.mongodb`：MongoDB 连接配置
+- `data.redis`：Redis 连接配置
+- `data.discovery.kubernetes`：Kubernetes 服务发现配置
+- `data.remote_grpc.greeter.circuitbreaker_enabled`：客户端熔断开关
+- `tracing`：OTLP tracing 配置
+
+支持通过环境变量覆盖关键配置（云原生推荐），例如：
+
+- `APP_SERVER_HTTP_ADDR`
+- `APP_SERVER_GRPC_ADDR`
+- `APP_SERVER_MIDDLEWARE_RATELIMIT_ENABLED`
+- `APP_DATA_POSTGRES_SOURCE`
+- `APP_DATA_REDIS_ADDR`
+- `APP_DATA_MONGODB_URI`
+- `APP_TRACING_ENABLED`
 
 ## Docker
+
 ```bash
 # build
-docker build -t <your-docker-image-name> .
+docker build -t <your-image> .
 
 # run
-docker run --rm -p 8000:8000 -p 9000:9000 -v </path/to/your/configs>:/data/conf <your-docker-image-name>
+docker run --rm -p 8000:8000 -p 9000:9000 -v </path/to/configs>:/data/conf <your-image>
 ```
 
+## Kubernetes
+
+示例清单位于 `deploy/k8s`：
+
+- `deployment.yaml`：Deployment（含 liveness/readiness probe）
+- `service.yaml`：Service（HTTP/gRPC）
+- `hpa.yaml`：HorizontalPodAutoscaler
+- `servicemonitor.yaml`：Prometheus ServiceMonitor
+- `configmap.yaml`：配置和环境变量示例
+- `secret.example.yaml`：敏感配置模板
+
+`/readyz` 已接入依赖探活（PostgreSQL/Redis/MongoDB），当已启用依赖不可用时返回 `503`。
+默认运行图会注入当前保留的全部组件（通过配置开关控制是否启用运行行为）。
+
+## 常用命令
+
+```bash
+# 生成代码
+go generate ./...
+
+# 整理依赖
+go mod tidy
+
+# 全量测试
+go test ./...
+```
+
+## 架构说明
+
+该模板采用轻量 DDD 分层，并保持依赖方向单向。
+
+### 分层职责
+
+- `internal/server`：入站适配层（HTTP/gRPC 和 MQ/WebSocket 等接入）
+- `internal/service`：应用服务编排层，不承载持久化细节
+- `internal/biz`：领域用例与接口定义，不依赖传输框架细节
+- `internal/data`：出站适配层（数据库、缓存、消息发布、远程调用实现）
+- `internal/pkg/*`：基础设施 provider 与客户端初始化
+
+依赖方向：
+
+`server -> service -> biz -> data -> pkg`
+
+其中由 `biz` 定义接口，`data` 实现接口。
+
+### 默认运行图
+
+默认 `wire` 注入图包含当前模板保留的全部组件：
+
+- HTTP/gRPC server
+- WebSocket/MQTT/RabbitMQ server 适配
+- DB/缓存/服务发现/日志/metrics/tracing/远程客户端 provider
+
+运行行为由配置开关（`enabled`）控制，而不是从默认注入图移除 provider。
+
+### 设计约束
+
+- 入站逻辑放 `server`，业务规则放 `biz`
+- `biz` 不依赖 protobuf 生成类型和框架细节
+- 新能力通过清晰构造函数和配置开关接入
+- 保持显式依赖注入，避免隐式全局状态

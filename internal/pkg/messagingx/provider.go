@@ -1,9 +1,8 @@
-package dbx
+package messagingx
 
 import "github.com/google/wire"
 
 var ProviderSet = wire.NewSet(
-	NewPostgresDB,
-	NewRedisClient,
-	NewMongoClient,
+	NewMQTTPublisher,
+	NewRabbitMQPublisher,
 )

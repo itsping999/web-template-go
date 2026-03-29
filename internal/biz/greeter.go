@@ -4,15 +4,14 @@ import (
 	"context"
 
 	"github.com/go-kratos/kratos/v2/errors"
-	"github.com/sirupsen/logrus"
-	v1 "github.com/wyuhsin/web-template-go/api/helloworld/v1"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
+	"github.com/go-kratos/kratos/v2/log"
 )
 
 var (
+	ReasonUserNotFound = "USER_NOT_FOUND"
+
 	// ErrUserNotFound is user not found.
-	ErrUserNotFound = errors.NotFound(v1.ErrorReason_USER_NOT_FOUND.String(), "user not found")
+	ErrUserNotFound = errors.NotFound(ReasonUserNotFound, "user not found")
 )
 
 // Greeter is a Greeter model.
@@ -23,21 +22,30 @@ type Greeter struct {
 // GreeterRepo is a Greater repo.
 type GreeterRepo interface {
 	Save(context.Context, *Greeter) (*Greeter, error)
-	Update(context.Context, *Greeter) (*Greeter, error)
-	FindByID(context.Context, int64) (*Greeter, error)
-	ListByHello(context.Context, string) ([]*Greeter, error)
-	ListAll(context.Context) ([]*Greeter, error)
+}
+
+type GreeterEventPublisher interface {
+	PublishGreeterCreated(context.Context, *Greeter) error
 }
 
 // GreeterUsecase is a Greeter usecase.
 type GreeterUsecase struct {
-	repo GreeterRepo
-	log  *logrus.Entry
+	repo      GreeterRepo
+	publisher GreeterEventPublisher
+	log       *log.Helper
 }
 
 // NewGreeterUsecase new a Greeter usecase.
-func NewGreeterUsecase(repo GreeterRepo, logger *logrus.Entry) *GreeterUsecase {
-	return &GreeterUsecase{repo: repo, log: logger.WithField("module", "biz/greeter")}
+func NewGreeterUsecase(
+	repo GreeterRepo,
+	publisher GreeterEventPublisher,
+	logger log.Logger,
+) *GreeterUsecase {
+	return &GreeterUsecase{
+		repo:      repo,
+		publisher: publisher,
+		log:       log.NewHelper(log.With(logger, "module", "biz/greeter")),
+	}
 }
 
 // CreateGreeter creates a Greeter, and returns the new Greeter.
@@ -45,10 +53,15 @@ func (uc *GreeterUsecase) CreateGreeter(
 	ctx context.Context,
 	g *Greeter,
 ) (*Greeter, error) {
-	ctx, span := otel.Tracer("biz.greeter").Start(ctx, "GreeterUsecase.CreateGreeter")
-	span.SetAttributes(attribute.String("greeter.hello", g.Hello))
-	defer span.End()
-
 	uc.log.WithContext(ctx).Infof("CreateGreeter: %v", g.Hello)
-	return uc.repo.Save(ctx, g)
+	saved, err := uc.repo.Save(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	if uc.publisher != nil {
+		if err = uc.publisher.PublishGreeterCreated(ctx, saved); err != nil {
+			uc.log.WithContext(ctx).Warnf("publish greeter created event failed: %v", err)
+		}
+	}
+	return saved, nil
 }

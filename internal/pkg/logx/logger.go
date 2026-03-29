@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	klog "github.com/go-kratos/kratos/v2/log"
-	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -24,8 +23,8 @@ type Options struct {
 	LocalTime  bool   `json:"local_time" yaml:"local_time"`
 }
 
-// New creates a logrus logger from environment variables.
-func New() *logrus.Logger {
+// New creates a kratos logger from environment variables.
+func New() klog.Logger {
 	return NewWithOptions(Options{
 		Level:      strings.TrimSpace(os.Getenv("LOG_LEVEL")),
 		Format:     strings.TrimSpace(os.Getenv("LOG_FORMAT")),
@@ -40,50 +39,24 @@ func New() *logrus.Logger {
 	})
 }
 
-func NewWithOptions(opts Options) *logrus.Logger {
-	l := logrus.New()
-	l.SetOutput(buildWriter(opts))
+func NewWithOptions(opts Options) klog.Logger {
+	base := klog.NewStdLogger(buildWriter(opts))
+	return klog.NewFilter(base, klog.FilterLevel(parseLevel(opts.Level)))
+}
 
-	switch strings.ToLower(strings.TrimSpace(opts.Format)) {
-	case "text":
-		l.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
+func parseLevel(v string) klog.Level {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "debug":
+		return klog.LevelDebug
+	case "warn", "warning":
+		return klog.LevelWarn
+	case "error":
+		return klog.LevelError
+	case "fatal":
+		return klog.LevelFatal
 	default:
-		l.SetFormatter(&logrus.JSONFormatter{})
+		return klog.LevelInfo
 	}
-
-	lvl := strings.ToLower(strings.TrimSpace(opts.Level))
-	if lvl == "" {
-		lvl = "info"
-	}
-	if parsed, err := logrus.ParseLevel(lvl); err == nil {
-		l.SetLevel(parsed)
-	} else {
-		l.SetLevel(logrus.InfoLevel)
-	}
-
-	l.SetReportCaller(opts.Caller)
-	return l
-}
-
-func NewEntry(logger *logrus.Logger, fields logrus.Fields) *logrus.Entry {
-	if logger == nil {
-		logger = logrus.New()
-	}
-	if fields == nil {
-		return logrus.NewEntry(logger)
-	}
-	return logger.WithFields(fields)
-}
-
-func NewKratosLogger(entry *logrus.Entry) klog.Logger {
-	if entry == nil {
-		entry = logrus.NewEntry(logrus.New())
-	}
-	return &kratosLogrusLogger{entry: entry}
-}
-
-type kratosLogrusLogger struct {
-	entry *logrus.Entry
 }
 
 func parseBoolEnv(name string) bool {
@@ -140,43 +113,4 @@ func buildWriter(opts Options) io.Writer {
 		return io.MultiWriter(os.Stdout, rotateWriter)
 	}
 	return rotateWriter
-}
-
-func (l *kratosLogrusLogger) Log(level klog.Level, keyvals ...interface{}) error {
-	fields := logrus.Fields{}
-	msg := "kratos log"
-
-	for i := 0; i < len(keyvals); i += 2 {
-		key := fmt.Sprintf("arg_%d", i)
-		if k, ok := keyvals[i].(string); ok && k != "" {
-			key = k
-		}
-		if i+1 >= len(keyvals) {
-			fields[key] = nil
-			continue
-		}
-		val := keyvals[i+1]
-		if key == "msg" {
-			msg = fmt.Sprintf("%v", val)
-			continue
-		}
-		fields[key] = val
-	}
-
-	e := l.entry.WithFields(fields)
-	switch level {
-	case klog.LevelDebug:
-		e.Debug(msg)
-	case klog.LevelInfo:
-		e.Info(msg)
-	case klog.LevelWarn:
-		e.Warn(msg)
-	case klog.LevelError:
-		e.Error(msg)
-	case klog.LevelFatal:
-		e.Fatal(msg)
-	default:
-		e.Info(msg)
-	}
-	return nil
 }

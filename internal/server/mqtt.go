@@ -2,41 +2,47 @@ package server
 
 import (
 	"context"
-	"fmt"
+	"strings"
 
-	"github.com/sirupsen/logrus"
+	"github.com/go-kratos/kratos/v2/log"
 	"github.com/tx7do/kratos-transport/transport/mqtt"
 
 	"github.com/tx7do/kratos-transport/broker"
-	"github.com/wyuhsin/web-template-go/internal/service"
 )
 
 type MQTTConfig struct {
-	Addr string `json:"addr" yaml:"addr"`
+	Enabled bool   `json:"enabled" yaml:"enabled"`
+	Addr    string `json:"addr" yaml:"addr"`
+	Topic   string `json:"topic" yaml:"topic"`
 }
 
 // NewMQTTServer create a mqtt server.
 func NewMQTTServer(
-	c *Config,
-	_ *logrus.Entry,
-	svc *service.GreeterService,
+	c *MQTTConfig,
+	logger log.Logger,
 ) *mqtt.Server {
+	helper := log.NewHelper(log.With(logger, "module", "server/mqtt"))
+	if c == nil || !c.Enabled {
+		helper.Info("mqtt server disabled, skip initialization")
+		return nil
+	}
+	addr := strings.TrimSpace(c.Addr)
+	topic := strings.TrimSpace(c.Topic)
+	if addr == "" || topic == "" {
+		helper.Error("mqtt server config invalid: addr/topic must be set when enabled")
+		return nil
+	}
 	ctx := context.Background()
 
 	srv := mqtt.NewServer(
-		mqtt.WithAddress([]string{c.MQTT.Addr}),
+		mqtt.WithAddress([]string{addr}),
 		mqtt.WithCodec("json"),
 	)
 
 	_ = srv.RegisterSubscriber(ctx,
-		"/hfp/v2/journey/ongoing/vp/bus/#",
-		func(ctx context.Context, evt broker.Event) error {
-			switch t := evt.Message().Body.(type) {
-			case any:
-				return nil
-			default:
-				return fmt.Errorf("unsupported type: %T", t)
-			}
+		topic,
+		func(context.Context, broker.Event) error {
+			return nil
 		},
 		func() broker.Any { return struct{}{} },
 	)

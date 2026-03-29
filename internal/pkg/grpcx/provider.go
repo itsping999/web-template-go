@@ -1,9 +1,7 @@
-package dbx
+package grpcx
 
 import "github.com/google/wire"
 
 var ProviderSet = wire.NewSet(
-	NewPostgresDB,
-	NewRedisClient,
-	NewMongoClient,
+	NewGreeterClient,
 )

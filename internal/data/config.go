@@ -1,14 +1,13 @@
 package data
 
 import "github.com/wyuhsin/web-template-go/internal/pkg/dbx"
+import "github.com/wyuhsin/web-template-go/internal/pkg/discoveryx"
+import "github.com/wyuhsin/web-template-go/internal/pkg/grpcx"
 
 type Config struct {
-	MySQL      dbx.MySQLConfig      `json:"mysql" yaml:"mysql"`
-	Postgres   dbx.PostgresConfig   `json:"postgres" yaml:"postgres"`
-	MSSQL      dbx.MSSQLConfig      `json:"mssql" yaml:"mssql"`
-	ClickHouse dbx.ClickHouseConfig `json:"clickhouse" yaml:"clickhouse"`
-	SQLite     dbx.SQLiteConfig     `json:"sqlite" yaml:"sqlite"`
-	GaussDB    dbx.GaussDBConfig    `json:"gaussdb" yaml:"gaussdb"`
-	Redis      dbx.RedisConfig      `json:"redis" yaml:"redis"`
-	MongoDB    dbx.MongoConfig      `json:"mongodb" yaml:"mongodb"`
+	Discovery  discoveryx.Config  `json:"discovery" yaml:"discovery"`
+	Postgres   dbx.PostgresConfig `json:"postgres" yaml:"postgres"`
+	Redis      dbx.RedisConfig    `json:"redis" yaml:"redis"`
+	MongoDB    dbx.MongoConfig    `json:"mongodb" yaml:"mongodb"`
+	RemoteGRPC grpcx.Config       `json:"remote_grpc" yaml:"remote_grpc"`
 }

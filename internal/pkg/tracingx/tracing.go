@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/go-kratos/kratos/v2/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -19,12 +20,15 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
-func Init(cfg *Config, appName, appVersion string, logger *logrus.Entry) (func(), error) {
+func Init(cfg *Config, appName, appVersion string, logger log.Logger) (func(), error) {
 	if cfg == nil || !cfg.Enabled {
 		return func() {}, nil
 	}
+	if logger == nil {
+		logger = log.NewStdLogger(os.Stdout)
+	}
 
-	helper := logger.WithField("module", "tracing")
+	helper := log.NewHelper(log.With(logger, "module", "tracing"))
 	serviceName := strings.TrimSpace(cfg.ServiceName)
 	if serviceName == "" {
 		serviceName = appName

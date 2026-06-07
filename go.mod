@@ -2,8 +2,6 @@ module github.com/wyuhsin/web-template-go
 
 go 1.24.0
 
-toolchain go1.24.2
-
 require (
 	github.com/envoyproxy/protoc-gen-validate v1.2.1
 	github.com/go-kratos/kratos/contrib/middleware/validate/v2 v2.0.0-20260228034312-fe9258d38fd4

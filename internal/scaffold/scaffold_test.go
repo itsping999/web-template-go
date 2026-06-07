@@ -86,6 +86,32 @@ func TestRunProtoScaffold(t *testing.T) {
 		}
 	}
 
+	// Create provider set stubs so updateProviderSets can modify them.
+	if err := os.WriteFile(filepath.Join(root, "internal/service/service.go"), []byte(`package service
+
+import "github.com/google/wire"
+
+var ProviderSet = wire.NewSet()
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal/biz/biz.go"), []byte(`package biz
+
+import "github.com/google/wire"
+
+var ProviderSet = wire.NewSet()
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal/data/data.go"), []byte(`package data
+
+import "github.com/google/wire"
+
+var ProviderSet = wire.NewSet()
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	runner := &fakeRunner{t: t, root: root}
 	result, err := RunProto(context.Background(), ProtoOptions{
 		RootDir:          root,
@@ -131,6 +157,12 @@ func TestRunProtoScaffold(t *testing.T) {
 	if !strings.Contains(bizStr, "type DemoUsecase struct") {
 		t.Fatalf("biz stub missing DemoUsecase struct:\n%s", bizStr)
 	}
+	if !strings.Contains(bizStr, "ErrDemoNotFound") {
+		t.Fatalf("biz stub missing ErrDemoNotFound:\n%s", bizStr)
+	}
+	if !strings.Contains(bizStr, "type Demo struct") {
+		t.Fatalf("biz stub missing Demo domain model:\n%s", bizStr)
+	}
 
 	// Verify data stub content
 	dataContent, err := os.ReadFile(result.DataPath)
@@ -144,13 +176,34 @@ func TestRunProtoScaffold(t *testing.T) {
 	if !strings.Contains(dataStr, "biz.DemoRepo") {
 		t.Fatalf("data stub missing biz.DemoRepo reference:\n%s", dataStr)
 	}
+
+	// Verify provider sets were auto-updated
+	svcContent, err := os.ReadFile(filepath.Join(root, "internal/service/service.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(svcContent), "NewDemoService") {
+		t.Fatalf("service provider set not updated:\n%s", string(svcContent))
+	}
+	bizProvContent, err := os.ReadFile(filepath.Join(root, "internal/biz/biz.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bizProvContent), "NewDemoUsecase") {
+		t.Fatalf("biz provider set not updated:\n%s", string(bizProvContent))
+	}
+	dataProvContent, err := os.ReadFile(filepath.Join(root, "internal/data/data.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(dataProvContent), "NewDemoRepo") {
+		t.Fatalf("data provider set not updated:\n%s", string(dataProvContent))
+	}
+
 	wantNextSteps := []string{
 		"Implement DemoRepo interface methods in internal/data/demo.go.",
-		"Add NewDemoRepo to internal/data ProviderSet.",
 		"Implement DemoUsecase methods in internal/biz/demo.go.",
-		"Add NewDemoUsecase to internal/biz ProviderSet.",
 		"Implement service methods in internal/service/demo.go.",
-		"Add NewDemoService to internal/service/service.go ProviderSet.",
 		"Register the generated Demo service in internal/server/grpc.go and internal/server/http.go.",
 		"Run go generate ./... && go mod tidy, then make verify.",
 	}

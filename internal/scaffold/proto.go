@@ -139,6 +139,10 @@ func RunProto(ctx context.Context, opts ProtoOptions) (*ProtoResult, error) {
 		return nil, fmt.Errorf("generate data stub: %w", err)
 	}
 
+	if err := updateProviderSets(root, protoRel, targetDir, bizDir, dataDir); err != nil {
+		return nil, fmt.Errorf("update provider sets: %w", err)
+	}
+
 	return &ProtoResult{
 		ProtoPath:   protoPath,
 		ServicePath: servicePath,
@@ -264,6 +268,57 @@ func serviceFilename(protoRel string) string {
 	return base + ".go"
 }
 
+// updateProviderSet adds a constructor name to a wire provider set file.
+// It finds the wire.NewSet( call and appends the constructor before the closing paren.
+// Handles both single-line (wire.NewSet(A, B)) and multi-line formats.
+func updateProviderSet(path, constructorName string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	str := string(content)
+	if strings.Contains(str, constructorName) {
+		return nil // already present
+	}
+	idx := strings.LastIndex(str, ")")
+	if idx < 0 {
+		return fmt.Errorf("cannot find closing paren in %s", path)
+	}
+	prefix := str[:idx]
+	if strings.HasSuffix(strings.TrimRight(prefix, " \t"), "\n") {
+		// Multi-line: insert with tab indentation before the closing paren
+		insert := fmt.Sprintf("\t%s,\n", constructorName)
+		next := prefix + insert + str[idx:]
+		return os.WriteFile(path, []byte(next), 0o644)
+	}
+	// Single-line: insert before closing paren with comma separator
+	insert := fmt.Sprintf(", %s", constructorName)
+	next := prefix + insert + str[idx:]
+	return os.WriteFile(path, []byte(next), 0o644)
+}
+
+// updateProviderSets adds New<Service>Service, New<Singular>Usecase, and
+// New<Singular>Repo to their respective provider set files.
+func updateProviderSets(root, protoRel, serviceDir, bizDir, dataDir string) error {
+	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
+	singular := singularize(baseName)
+
+	serviceConstructor := "New" + upperCamel(baseName) + "Service"
+	bizConstructor := "New" + upperCamel(singular) + "Usecase"
+	dataConstructor := "New" + upperCamel(singular) + "Repo"
+
+	if err := updateProviderSet(filepath.Join(root, serviceDir, "service.go"), serviceConstructor); err != nil {
+		return fmt.Errorf("update service provider set: %w", err)
+	}
+	if err := updateProviderSet(filepath.Join(root, bizDir, "biz.go"), bizConstructor); err != nil {
+		return fmt.Errorf("update biz provider set: %w", err)
+	}
+	if err := updateProviderSet(filepath.Join(root, dataDir, "data.go"), dataConstructor); err != nil {
+		return fmt.Errorf("update data provider set: %w", err)
+	}
+	return nil
+}
+
 func protoNextSteps(protoRel, serviceTargetDir, bizDir, dataDir string) []string {
 	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
 	serviceFile := filepath.ToSlash(filepath.Join(serviceTargetDir, serviceFilename(protoRel)))
@@ -273,11 +328,8 @@ func protoNextSteps(protoRel, serviceTargetDir, bizDir, dataDir string) []string
 	dataFile := filepath.ToSlash(filepath.Join(dataDir, baseName+".go"))
 	return []string{
 		fmt.Sprintf("Implement %sRepo interface methods in %s.", upperCamel(singular), dataFile),
-		fmt.Sprintf("Add New%sRepo to %s ProviderSet.", upperCamel(singular), dataDir),
 		fmt.Sprintf("Implement %sUsecase methods in %s.", upperCamel(singular), bizFile),
-		fmt.Sprintf("Add New%sUsecase to %s ProviderSet.", upperCamel(singular), bizDir),
 		fmt.Sprintf("Implement service methods in %s.", serviceFile),
-		fmt.Sprintf("Add New%sService to internal/service/service.go ProviderSet.", serviceName),
 		fmt.Sprintf("Register the generated %s service in internal/server/grpc.go and internal/server/http.go.", serviceName),
 		"Run go generate ./... && go mod tidy, then make verify.",
 	}
@@ -292,7 +344,19 @@ func writeBizStub(root, protoRel, bizDir, modulePath string) (string, error) {
 
 	tpl := `package biz
 
-import "github.com/go-kratos/kratos/v2/log"
+import (
+	"github.com/go-kratos/kratos/v2/errors"
+	"github.com/go-kratos/kratos/v2/log"
+)
+
+var (
+	Err` + upperCamel(singular) + `NotFound = errors.NotFound("` + strings.ToUpper(baseName) + `_NOT_FOUND", "` + singular + ` not found")
+)
+
+// ` + upperCamel(singular) + ` is the domain model for ` + singular + `.
+type ` + upperCamel(singular) + ` struct {
+	// TODO: add domain fields, for example: ID, Name, CreatedAt
+}
 
 // ` + interfaceName + ` defines the outbound port for ` + singular + ` persistence.
 type ` + interfaceName + ` interface {

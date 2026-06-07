@@ -198,10 +198,12 @@ make scaffold-proto PROTO=order/v1/order.proto
 - 在 `api/order/v1/order.proto` 创建 Kratos 标准 CRUD proto 模板
 - 修正 `go_package` 为当前 Go module 下的 `api/...` 路径
 - 在 `internal/service/order.go` 创建 service stub
+- 在 `internal/biz/order.go` 创建领域接口（`OrderRepo`）和用例结构体（`OrderUsecase`）
+- 在 `internal/data/order.go` 创建出站适配器骨架（实现 `biz.OrderRepo`）
 - 执行 `make api` 刷新 protobuf / gRPC / HTTP / validate / OpenAPI 生成物
-- 输出下一步接线清单：service ProviderSet、HTTP/gRPC 注册点、可选 biz/data 适配和验证命令
+- 输出下一步接线清单：data/biz ProviderSet 注册、service ProviderSet、HTTP/gRPC 注册点和验证命令
 
-生成后仍需按业务需要补齐 `internal/biz`、`internal/data`，并在 `internal/server/grpc.go` / `internal/server/http.go` 注册新服务。
+生成后仍需实现 `biz` 接口方法和 `data` 适配器逻辑，并在 `internal/server/grpc.go` / `internal/server/http.go` 注册新服务。
 修改 proto、Wire injector 或 provider set 后，运行 `make generated-check` 可确认 `api/**`、`openapi.yaml`、`cmd/server/wire_gen.go` 和 Go module 校验文件没有漏提交。
 
 ## 架构说明

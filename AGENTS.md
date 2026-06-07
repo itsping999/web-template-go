@@ -206,7 +206,7 @@ The data layer currently uses remote gRPC forwarding instead of GORM/DB as the o
 5. Add tests under `tests/` for disabled mode and missing required config.
 
 ### Add Or Change A Protobuf API
-1. For a new API, prefer `make scaffold-proto PROTO=order/v1/order.proto`; it wraps Kratos CLI, fixes this repo's `go_package`, creates the service stub, runs `make api`, and prints the remaining wiring checklist.
+1. For a new API, prefer `make scaffold-proto PROTO=order/v1/order.proto`; it wraps Kratos CLI, fixes this repo's `go_package`, creates the service stub, generates biz interface/usecase and data adapter skeletons, runs `make api`, and prints the remaining wiring checklist.
 2. For existing APIs, edit `api/**/*.proto`; use `third_party/` imports already vendored in this repo, then run `make api`.
 3. Implement the generated server interface in `internal/service/`.
 4. Register new inbound services in `internal/server/grpc.go` and/or `internal/server/http.go`.

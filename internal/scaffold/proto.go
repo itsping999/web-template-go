@@ -13,7 +13,11 @@ import (
 	"strings"
 )
 
-const defaultServiceTargetDir = "internal/service"
+const (
+	defaultServiceTargetDir = "internal/service"
+	defaultBizTargetDir     = "internal/biz"
+	defaultDataTargetDir    = "internal/data"
+)
 
 var goPackageRE = regexp.MustCompile(`(?m)^option go_package = "([^"]+)";`)
 
@@ -38,12 +42,16 @@ type ProtoOptions struct {
 	RootDir          string
 	Proto            string
 	ServiceTargetDir string
+	BizTargetDir     string
+	DataTargetDir    string
 	Runner           Runner
 }
 
 type ProtoResult struct {
 	ProtoPath   string
 	ServicePath string
+	BizPath     string
+	DataPath    string
 	NextSteps   []string
 }
 
@@ -112,10 +120,31 @@ func RunProto(ctx context.Context, opts ProtoOptions) (*ProtoResult, error) {
 		return nil, err
 	}
 
+	bizDir, err := cleanRelativeDir(opts.BizTargetDir, defaultBizTargetDir)
+	if err != nil {
+		return nil, err
+	}
+	dataDir, err := cleanRelativeDir(opts.DataTargetDir, defaultDataTargetDir)
+	if err != nil {
+		return nil, err
+	}
+
+	bizPath, err := writeBizStub(root, protoRel, bizDir, modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("generate biz stub: %w", err)
+	}
+
+	dataPath, err := writeDataStub(root, protoRel, dataDir, modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("generate data stub: %w", err)
+	}
+
 	return &ProtoResult{
 		ProtoPath:   protoPath,
 		ServicePath: servicePath,
-		NextSteps:   protoNextSteps(protoRel, targetDir),
+		BizPath:     bizPath,
+		DataPath:    dataPath,
+		NextSteps:   protoNextSteps(protoRel, targetDir, bizDir, dataDir),
 	}, nil
 }
 
@@ -235,16 +264,155 @@ func serviceFilename(protoRel string) string {
 	return base + ".go"
 }
 
-func protoNextSteps(protoRel, serviceTargetDir string) []string {
+func protoNextSteps(protoRel, serviceTargetDir, bizDir, dataDir string) []string {
+	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
 	serviceFile := filepath.ToSlash(filepath.Join(serviceTargetDir, serviceFilename(protoRel)))
-	serviceName := upperCamel(strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel)))
+	serviceName := upperCamel(baseName)
+	singular := singularize(baseName)
+	bizFile := filepath.ToSlash(filepath.Join(bizDir, baseName+".go"))
+	dataFile := filepath.ToSlash(filepath.Join(dataDir, baseName+".go"))
 	return []string{
+		fmt.Sprintf("Implement %sRepo interface methods in %s.", upperCamel(singular), dataFile),
+		fmt.Sprintf("Add New%sRepo to %s ProviderSet.", upperCamel(singular), dataDir),
+		fmt.Sprintf("Implement %sUsecase methods in %s.", upperCamel(singular), bizFile),
+		fmt.Sprintf("Add New%sUsecase to %s ProviderSet.", upperCamel(singular), bizDir),
 		fmt.Sprintf("Implement service methods in %s.", serviceFile),
 		fmt.Sprintf("Add New%sService to internal/service/service.go ProviderSet.", serviceName),
 		fmt.Sprintf("Register the generated %s service in internal/server/grpc.go and internal/server/http.go.", serviceName),
-		"Add biz/data interfaces and adapters only when the module needs domain state or outgoing dependencies.",
 		"Run go generate ./... && go mod tidy, then make verify.",
 	}
+}
+
+func writeBizStub(root, protoRel, bizDir, modulePath string) (string, error) {
+	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
+	singular := singularize(baseName)
+	interfaceName := upperCamel(singular) + "Repo"
+	usecaseName := upperCamel(singular) + "Usecase"
+	constructorName := "New" + usecaseName
+
+	tpl := `package biz
+
+import "github.com/go-kratos/kratos/v2/log"
+
+// ` + interfaceName + ` defines the outbound port for ` + singular + ` persistence.
+type ` + interfaceName + ` interface {
+	// TODO: define domain methods, for example:
+	// Save(context.Context, *` + upperCamel(singular) + `) (*` + upperCamel(singular) + `, error)
+}
+
+// ` + usecaseName + ` implements ` + singular + ` business rules.
+type ` + usecaseName + ` struct {
+	repo ` + interfaceName + `
+	log  *log.Helper
+}
+
+// ` + constructorName + ` creates a new ` + usecaseName + `.
+func ` + constructorName + `(repo ` + interfaceName + `, logger log.Logger) *` + usecaseName + ` {
+	return &` + usecaseName + `{
+		repo: repo,
+		log:  log.NewHelper(log.With(logger, "module", "biz/` + baseName + `")),
+	}
+}
+`
+
+	if err := ensureOrCreateDir(filepath.Join(root, bizDir)); err != nil {
+		return "", err
+	}
+	path := filepath.Join(root, bizDir, baseName+".go")
+	if err := os.WriteFile(path, []byte(tpl), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func writeDataStub(root, protoRel, dataDir, modulePath string) (string, error) {
+	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
+	singular := singularize(baseName)
+	repoName := lowerCamel(singular) + "Repo"
+	interfaceName := upperCamel(singular) + "Repo"
+	constructorName := "New" + upperCamel(singular) + "Repo"
+
+	tpl := `package data
+
+import (
+	"github.com/go-kratos/kratos/v2/log"
+	"` + modulePath + `/internal/biz` + `"
+)
+
+type ` + repoName + ` struct {
+	log *log.Helper
+}
+
+// ` + constructorName + ` implements biz.` + interfaceName + `.
+func ` + constructorName + `(logger log.Logger) biz.` + interfaceName + ` {
+	return &` + repoName + `{
+		log: log.NewHelper(log.With(logger, "module", "data/` + baseName + `")),
+	}
+}
+
+// TODO: implement biz.` + interfaceName + ` methods.
+`
+
+	if err := ensureOrCreateDir(filepath.Join(root, dataDir)); err != nil {
+		return "", err
+	}
+	path := filepath.Join(root, dataDir, baseName+".go")
+	if err := os.WriteFile(path, []byte(tpl), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// ensureOrCreateDir ensures a directory exists, creating it if necessary.
+// Unlike ensureDir, this does not fail when the directory does not yet exist.
+func ensureOrCreateDir(path string) error {
+	info, err := os.Stat(path)
+	if err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("%s is not a directory", path)
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.MkdirAll(path, 0o755)
+}
+
+// singularize returns a naive singular form of a plural English word.
+// This is intentionally simple; override for irregular nouns.
+func singularize(word string) string {
+	if strings.HasSuffix(word, "ies") && len(word) > 3 {
+		return word[:len(word)-3] + "y"
+	}
+	if strings.HasSuffix(word, "ses") || strings.HasSuffix(word, "xes") || strings.HasSuffix(word, "zes") {
+		return word[:len(word)-2]
+	}
+	if strings.HasSuffix(word, "s") && !strings.HasSuffix(word, "ss") {
+		return word[:len(word)-1]
+	}
+	return word
+}
+
+func lowerCamel(input string) string {
+	parts := strings.FieldsFunc(input, func(r rune) bool {
+		return r == '-' || r == '_' || r == '.'
+	})
+	var out strings.Builder
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		if i == 0 {
+			out.WriteString(strings.ToLower(part))
+		} else {
+			out.WriteString(strings.ToUpper(part[:1]))
+			if len(part) > 1 {
+				out.WriteString(part[1:])
+			}
+		}
+	}
+	return out.String()
 }
 
 func upperCamel(input string) string {

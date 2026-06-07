@@ -80,8 +80,10 @@ func TestRunProtoScaffold(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, "api"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "internal", "service"), 0o755); err != nil {
-		t.Fatal(err)
+	for _, dir := range []string{"internal/service", "internal/biz", "internal/data"} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(dir)), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	runner := &fakeRunner{t: t, root: root}
@@ -110,11 +112,46 @@ func TestRunProtoScaffold(t *testing.T) {
 	if result.ServicePath != filepath.Join(root, "internal", "service", "demo.go") {
 		t.Fatalf("unexpected service path: %s", result.ServicePath)
 	}
+	if result.BizPath != filepath.Join(root, "internal", "biz", "demo.go") {
+		t.Fatalf("unexpected biz path: %s", result.BizPath)
+	}
+	if result.DataPath != filepath.Join(root, "internal", "data", "demo.go") {
+		t.Fatalf("unexpected data path: %s", result.DataPath)
+	}
+
+	// Verify biz stub content
+	bizContent, err := os.ReadFile(result.BizPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bizStr := string(bizContent)
+	if !strings.Contains(bizStr, "type DemoRepo interface") {
+		t.Fatalf("biz stub missing DemoRepo interface:\n%s", bizStr)
+	}
+	if !strings.Contains(bizStr, "type DemoUsecase struct") {
+		t.Fatalf("biz stub missing DemoUsecase struct:\n%s", bizStr)
+	}
+
+	// Verify data stub content
+	dataContent, err := os.ReadFile(result.DataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataStr := string(dataContent)
+	if !strings.Contains(dataStr, "type demoRepo struct") {
+		t.Fatalf("data stub missing demoRepo struct:\n%s", dataStr)
+	}
+	if !strings.Contains(dataStr, "biz.DemoRepo") {
+		t.Fatalf("data stub missing biz.DemoRepo reference:\n%s", dataStr)
+	}
 	wantNextSteps := []string{
+		"Implement DemoRepo interface methods in internal/data/demo.go.",
+		"Add NewDemoRepo to internal/data ProviderSet.",
+		"Implement DemoUsecase methods in internal/biz/demo.go.",
+		"Add NewDemoUsecase to internal/biz ProviderSet.",
 		"Implement service methods in internal/service/demo.go.",
 		"Add NewDemoService to internal/service/service.go ProviderSet.",
 		"Register the generated Demo service in internal/server/grpc.go and internal/server/http.go.",
-		"Add biz/data interfaces and adapters only when the module needs domain state or outgoing dependencies.",
 		"Run go generate ./... && go mod tidy, then make verify.",
 	}
 	if strings.Join(result.NextSteps, "\n") != strings.Join(wantNextSteps, "\n") {
@@ -161,4 +198,44 @@ option go_package = "github.com/example/app/demo/v1;v1";
 		return os.WriteFile(servicePath, []byte("package service\n"), 0o644)
 	}
 	return nil
+}
+
+func TestSingularize(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"orders", "order"},
+		{"users", "user"},
+		{"buses", "bus"},
+		{"categories", "category"},
+		{"demos", "demo"},
+		{"greeter", "greeter"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := singularize(tt.input)
+			if got != tt.want {
+				t.Fatalf("singularize(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLowerCamel(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"order", "order"},
+		{"greeter", "greeter"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := lowerCamel(tt.input)
+			if got != tt.want {
+				t.Fatalf("lowerCamel(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
 }

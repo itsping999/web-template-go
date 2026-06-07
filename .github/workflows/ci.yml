@@ -23,14 +23,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Debug Go environment
-        run: |
-          go version
-          go env GOTOOLCHAIN
-          go build ./cmd/server/ 2>&1 || echo "BUILD FAILED"
-
       - name: Verify
-        run: make verify
+        run: |
+          go clean -cache
+          go vet ./... 2>&1
+          go test ./... 2>&1
+          gofmt -l $(find . -path ./.git -prune -o -name '*.go' -print) 2>&1
 
   docker:
     name: Docker

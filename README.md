@@ -94,9 +94,20 @@ docker run --rm -p 8000:8000 -p 9000:9000 -v </path/to/configs>:/data/conf web-t
 - `servicemonitor.yaml`：Prometheus ServiceMonitor
 - `configmap.yaml`：配置和环境变量示例
 - `secret.example.yaml`：敏感配置模板
+- `kustomization.yaml`：默认 apply 入口，不包含需要额外 CRD 的 ServiceMonitor
 
 `/readyz` 已接入依赖探活（PostgreSQL/Redis/MongoDB），当已启用依赖不可用时返回 `503`。
 默认运行图会注入当前保留的全部组件（通过配置开关控制是否启用运行行为）。
+
+```bash
+# 默认部署 HTTP/gRPC 服务、Service、HPA 和 ConfigMap
+kubectl apply -k deploy/k8s
+
+# 如集群已安装 Prometheus Operator，可额外启用 ServiceMonitor
+kubectl apply -f deploy/k8s/servicemonitor.yaml
+```
+
+启用 PostgreSQL/Redis/MongoDB、远程 gRPC 或 tracing 时，先在 `configmap.yaml` 打开对应 `APP_DATA_*_ENABLED` / `APP_TRACING_ENABLED` 开关，再从 `secret.example.yaml` 创建自己的 Secret。
 
 ## 常用命令
 

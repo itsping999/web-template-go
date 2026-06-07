@@ -13,6 +13,7 @@
 - `internal/data/` - implementations of biz interfaces and outgoing adapters.
 - `internal/pkg/` - provider sets plus DB, discovery, remote gRPC, messaging, metrics, tracing, and logging helpers.
 - `configs/config.yaml` - default runtime config; defaults should keep optional external dependencies disabled for local startup.
+- `deploy/k8s/` - Kubernetes examples; default `kustomization.yaml` should stay usable without optional CRDs.
 - `tests/` - package-level tests for provider behavior, usecase behavior, and smoke tests.
 
 ## Source Of Truth
@@ -25,6 +26,7 @@
 | Protobuf APIs | `api/**/*.proto` | Generated Go files live next to proto files and are refreshed by `make api`. |
 | Middleware stack | `internal/server/middleware.go` | HTTP and gRPC share recovery, metadata, metrics, logging, validation, optional tracing, and optional rate limit middleware. |
 | Readiness behavior | `internal/service/system.go` | Disabled dependencies are represented by nil clients and report `skipped`; only `down` makes readiness fail. |
+| Kubernetes examples | `deploy/k8s/` | Keep `kustomization.yaml` limited to built-in Kubernetes kinds; apply `servicemonitor.yaml` separately when the CRD exists. |
 
 ## Commands
 | Task | Command |
@@ -40,6 +42,7 @@
 | Build Docker image | `docker build -t web-template-go:local .` |
 | Cross-build binaries | `CONTAINER=docker make build` |
 | CI entrypoint | `.github/workflows/ci.yml` runs `make verify` and `make docker-build` |
+| Render Kubernetes examples | `kubectl kustomize deploy/k8s` |
 
 ## Common Workflows
 ### Add Or Change Runtime Config
@@ -77,6 +80,7 @@
 - The scaffold command lives in `cmd/scaffold` with reusable logic in `internal/scaffold`; keep it standard-library based and delegate code generation to Kratos/protoc tooling.
 - The Dockerfile is for the default single-service image path: build `./cmd/server` with Go 1.24 and run it on `scratch` as nonroot with default config copied to `/data/conf`.
 - Keep CI lightweight by wiring it through Makefile targets instead of duplicating command lists in `.github/workflows/ci.yml`.
+- K8s defaults should mirror `configs/config.yaml`: optional dependencies disabled, HTTP `/healthz` and `/readyz` probes, HTTP and gRPC ports exposed.
 - Do not hand-edit generated `api/**/*.pb.go`, `api/**/*_grpc.pb.go`, `api/**/*_http.pb.go`, or `cmd/server/wire_gen.go`; change the source proto or Wire injector and regenerate.
 
 ## Verification
@@ -84,9 +88,9 @@
 - Run `RUN_SMOKE=1 go test ./tests -run TestSmokeExternalDependencies` only when PostgreSQL, Redis, and MongoDB smoke endpoints are available.
 - After config or provider changes, include tests for disabled mode and missing required config.
 - After proto or DI changes, verify generated files are refreshed and no stale manual edits remain.
+- After Kubernetes manifest changes, run `kubectl kustomize deploy/k8s` when `kubectl` is available.
 
 ## Common Pitfalls
-- README mentions `deploy/k8s`, but that directory is not present in the current repo snapshot; verify deployment paths before documenting or editing them.
 - `make build` still uses containerized cross-build targets and expects a `CONTAINER` command such as `docker`; use `docker build -t web-template-go:local .` for the normal image path.
 - `make run` uses `go run ./cmd/server/...` without `-conf`; prefer the explicit local run command above when testing default config.
 - `RUN_SMOKE=1` tests require external services named `codex-postgres`, `codex-redis`, and `codex-mongo`.

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-template-go-config
+  labels:
+    app.kubernetes.io/name: web-template-go
+    app.kubernetes.io/component: api
+data:
+  APP_SERVER_HTTP_ENABLED: "true"
+  APP_SERVER_HTTP_ADDR: "0.0.0.0:8000"
+  APP_SERVER_GRPC_ENABLED: "true"
+  APP_SERVER_GRPC_ADDR: "0.0.0.0:9000"
+  APP_SERVER_MIDDLEWARE_RATELIMIT_ENABLED: "false"
+  APP_DATA_DISCOVERY_KUBERNETES_ENABLED: "false"
+  APP_DATA_POSTGRES_ENABLED: "false"
+  APP_DATA_REDIS_ENABLED: "false"
+  APP_DATA_MONGODB_ENABLED: "false"
+  APP_DATA_REMOTE_GRPC_GREETER_ENABLED: "false"
+  APP_TRACING_ENABLED: "false"
+  APP_LOGGER_LEVEL: "info"

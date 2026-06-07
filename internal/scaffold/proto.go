@@ -698,7 +698,7 @@ func writeDataStub(root, protoRel, dataDir, modulePath string, crud bool) (strin
 	constructorName := "New" + upperCamel(singular) + "Repo"
 	modelName := upperCamel(singular)
 
-	methodImpls := "\t// TODO: implement biz." + interfaceName + " methods."
+	methodImpls := "	// TODO: implement biz." + interfaceName + " methods."
 
 	if crud {
 		methodImpls = fmt.Sprintf(`func (r *%s) Create(ctx context.Context, %s *biz.%s) (*biz.%s, error) {
@@ -733,28 +733,25 @@ func (r *%s) Delete(ctx context.Context, id string) error {
 		)
 	}
 
-	tpl := `package data
-
-import (
-	"context"
-
-	"github.com/go-kratos/kratos/v2/log"
-	"` + modulePath + `/internal/biz` + `"
-)
-
-type ` + repoName + ` struct {
-	log *log.Helper
-}
-
-// ` + constructorName + ` implements biz.` + interfaceName + `.
-func ` + constructorName + `(logger log.Logger) biz.` + interfaceName + ` {
-	return &` + repoName + `{
-		log: log.NewHelper(log.With(logger, "module", "data/` + baseName + `")),
+	importLines := []string{
+		"\"context\"",
 	}
-}
+	if crud {
+		importLines = append(importLines, "\"fmt\"")
+	}
+	importLines = append(importLines,
+		"\"github.com/go-kratos/kratos/v2/log\"",
+		"\""+modulePath+"/internal/biz\"",
+	)
 
-` + methodImpls + `
-`
+	tpl := "package data\n\nimport (\n" + strings.Join(importLines, "\n") + "\n)\n\n" +
+		"type " + repoName + " struct {\n\tlog *log.Helper\n}\n\n" +
+		"// " + constructorName + " implements biz." + interfaceName + ".\n" +
+		"func " + constructorName + "(logger log.Logger) biz." + interfaceName + " {\n" +
+		"\treturn &" + repoName + "{\n" +
+		"\t\tlog: log.NewHelper(log.With(logger, \"module\", \"data/" + baseName + "\")),\n" +
+		"\t}\n}\n\n" +
+		methodImpls + "\n"
 
 	if err := ensureOrCreateDir(filepath.Join(root, dataDir)); err != nil {
 		return "", err

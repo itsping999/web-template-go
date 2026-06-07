@@ -191,7 +191,7 @@ scaffold-module:
 	fi
 	$(MAKE) generate
 	@echo ""
-	@echo "scaffold complete. Run make verify to check.
+	@echo "scaffold complete. Run make verify to check."
 
 .PHONY: docker-build-linux-amd64
 docker-build-linux-amd64:

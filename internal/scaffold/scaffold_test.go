@@ -228,6 +228,9 @@ func TestRunProtoScaffold(t *testing.T) {
 	if !strings.Contains(dataStr, "biz.DemoRepo") {
 		t.Fatalf("data stub missing biz.DemoRepo reference:\n%s", dataStr)
 	}
+	if strings.Contains(dataStr, `"fmt"`) {
+		t.Fatalf("non-CRUD data stub should not import fmt:\n%s", dataStr)
+	}
 
 	// Verify provider sets were auto-updated
 	svcContent, err := os.ReadFile(filepath.Join(root, "internal/service/service.go"))
@@ -373,6 +376,7 @@ func TestRunProtoCRUD(t *testing.T) {
 		"func (r *orderRepo) Update(",
 		"func (r *orderRepo) Delete(",
 		`fmt.Errorf("not implemented")`,
+		`"fmt"`,
 	} {
 		if !strings.Contains(dataStr, want) {
 			t.Fatalf("CRUD data stub missing %q:\n%s", want, dataStr)

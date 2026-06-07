@@ -9,6 +9,15 @@ SCAFFOLD_DIR := ./cmd/scaffold
 API_PROTO_FILES=$(shell find api -name *.proto)
 REQUIRED_TOOLS := go protoc kratos protoc-gen-go protoc-gen-go-grpc protoc-gen-go-http protoc-gen-go-errors protoc-gen-openapi protoc-gen-validate protoc-go-inject-tag wire
 OPTIONAL_TOOLS := docker kubectl
+GENERATED_CHECK_PATHS := api cmd/server/wire_gen.go go.mod go.sum openapi.yaml
+
+PROTOC_GEN_GO_VERSION := v1.36.11
+PROTOC_GEN_GO_GRPC_VERSION := v1.6.1
+KRATOS_TOOL_VERSION := v2.0.0-20260228034312-fe9258d38fd4
+PROTOC_GEN_OPENAPI_VERSION := v0.7.1
+PROTOC_GEN_VALIDATE_VERSION := v1.3.3
+PROTOC_GO_INJECT_TAG_VERSION := v1.4.0
+WIRE_VERSION := v0.7.0
 
 ARM_DOCKER_BUILD_IMAGE := docker.io/wyuhsin/go-cross-multiarch:go1.24-ubuntu16.04-20250625
 ARM_OUTPUT             := ./bin/arm/app
@@ -31,6 +40,7 @@ help:
 	@echo "  make fmt-check                   Check Go formatting without changing files"
 	@echo "  make verify                      Run formatting, vet, and tests"
 	@echo "  make api                         Regenerate proto/API outputs"
+	@echo "  make generated-check             Check generated proto/OpenAPI/Wire outputs"
 	@echo "  make generate                    Run go generate and go mod tidy"
 	@echo "  make scaffold-proto PROTO=...    Create a Kratos proto and service stub"
 	@echo "  make docker-build                Build the default Docker image"
@@ -63,15 +73,15 @@ doctor:
 
 .PHONY: init
 init:
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-	go install github.com/go-kratos/kratos/cmd/kratos/v2@latest
-	go install github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@latest
-	go install github.com/go-kratos/kratos/cmd/protoc-gen-go-errors/v2@latest
-	go install github.com/google/gnostic/cmd/protoc-gen-openapi@latest
-	go install github.com/google/wire/cmd/wire@latest
-	go install github.com/envoyproxy/protoc-gen-validate@latest
-	go install github.com/favadi/protoc-go-inject-tag@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
+	go install github.com/go-kratos/kratos/cmd/kratos/v2@$(KRATOS_TOOL_VERSION)
+	go install github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@$(KRATOS_TOOL_VERSION)
+	go install github.com/go-kratos/kratos/cmd/protoc-gen-go-errors/v2@$(KRATOS_TOOL_VERSION)
+	go install github.com/google/gnostic/cmd/protoc-gen-openapi@$(PROTOC_GEN_OPENAPI_VERSION)
+	go install github.com/google/wire/cmd/wire@$(WIRE_VERSION)
+	go install github.com/envoyproxy/protoc-gen-validate@$(PROTOC_GEN_VALIDATE_VERSION)
+	go install github.com/favadi/protoc-go-inject-tag@$(PROTOC_GO_INJECT_TAG_VERSION)
 
 .PHONY: config
 # config is now plain Go structs (no protobuf generation)
@@ -109,6 +119,17 @@ build:
 generate:
 	go generate ./...
 	go mod tidy
+
+.PHONY: generated-check
+generated-check:
+	$(MAKE) api
+	$(MAKE) generate
+	@if ! git diff --quiet -- $(GENERATED_CHECK_PATHS); then \
+		echo ""; \
+		echo "generated artifacts are out of date; run make api && make generate"; \
+		git diff --name-only -- $(GENERATED_CHECK_PATHS); \
+		exit 1; \
+	fi
 
 .PHONY: all
 # generate all

@@ -5,6 +5,7 @@
 ## 技术栈
 
 - 服务协议：HTTP + gRPC
+- ORM：GORM
 - 关系型数据库：PostgreSQL
 - 文档数据库：MongoDB
 - 缓存：Redis
@@ -45,15 +46,15 @@ sudo apt-get update && sudo apt-get install -y protobuf-compiler
 Go 代码生成器使用 `go install` 安装：
 
 ```bash
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-go install github.com/go-kratos/kratos/cmd/kratos/v2@latest
-go install github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@latest
-go install github.com/go-kratos/kratos/cmd/protoc-gen-go-errors/v2@latest
-go install github.com/google/gnostic/cmd/protoc-gen-openapi@latest
-go install github.com/google/wire/cmd/wire@latest
-go install github.com/envoyproxy/protoc-gen-validate@latest
-go install github.com/favadi/protoc-go-inject-tag@latest
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
+go install github.com/go-kratos/kratos/cmd/kratos/v2@v2.0.0-20260228034312-fe9258d38fd4
+go install github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@v2.0.0-20260228034312-fe9258d38fd4
+go install github.com/go-kratos/kratos/cmd/protoc-gen-go-errors/v2@v2.0.0-20260228034312-fe9258d38fd4
+go install github.com/google/gnostic/cmd/protoc-gen-openapi@v0.7.1
+go install github.com/google/wire/cmd/wire@v0.7.0
+go install github.com/envoyproxy/protoc-gen-validate@v1.3.3
+go install github.com/favadi/protoc-go-inject-tag@v1.4.0
 ```
 
 也可以直接运行：
@@ -167,6 +168,9 @@ make api
 # 生成 Wire 并整理依赖
 make generate
 
+# 检查 proto/OpenAPI/Wire 生成物是否已提交
+make generated-check
+
 # 全量测试
 make verify
 
@@ -191,6 +195,7 @@ make scaffold-proto PROTO=order/v1/order.proto
 - 输出下一步接线清单：service ProviderSet、HTTP/gRPC 注册点、可选 biz/data 适配和验证命令
 
 生成后仍需按业务需要补齐 `internal/biz`、`internal/data`，并在 `internal/server/grpc.go` / `internal/server/http.go` 注册新服务。
+修改 proto、Wire injector 或 provider set 后，运行 `make generated-check` 可确认 `api/**`、`openapi.yaml`、`cmd/server/wire_gen.go` 和 Go module 校验文件没有漏提交。
 
 ## 架构说明
 

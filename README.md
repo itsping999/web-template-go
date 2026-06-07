@@ -142,6 +142,7 @@ make scaffold-proto PROTO=order/v1/order.proto
 - 修正 `go_package` 为当前 Go module 下的 `api/...` 路径
 - 在 `internal/service/order.go` 创建 service stub
 - 执行 `make api` 刷新 protobuf / gRPC / HTTP / validate / OpenAPI 生成物
+- 输出下一步接线清单：service ProviderSet、HTTP/gRPC 注册点、可选 biz/data 适配和验证命令
 
 生成后仍需按业务需要补齐 `internal/biz`、`internal/data`，并在 `internal/server/grpc.go` / `internal/server/http.go` 注册新服务。
 

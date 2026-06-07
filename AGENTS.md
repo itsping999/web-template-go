@@ -23,6 +23,7 @@
 | Default config | `configs/config.yaml` | Keep defaults runnable without PostgreSQL, Redis, MongoDB, RabbitMQ, MQTT, WebSocket, tracing, or Kubernetes. |
 | Env overrides | `cmd/server/env.go` | Add explicit `APP_...` overrides for new deploy-time config keys. |
 | Dependency graph | `cmd/server/wire.go`, `cmd/server/wire_gen.go`, provider sets | Update `wire.go` and regenerate `wire_gen.go` after changing providers. |
+| Scaffold command | `cmd/scaffold`, `internal/scaffold` | Wraps Kratos CLI for proto/service generation and prints this template's next wiring steps. |
 | Protobuf APIs | `api/**/*.proto` | Generated Go files live next to proto files and are refreshed by `make api`. |
 | Middleware stack | `internal/server/middleware.go` | HTTP and gRPC share recovery, metadata, metrics, logging, validation, optional tracing, and optional rate limit middleware. |
 | Readiness behavior | `internal/service/system.go` | Disabled dependencies are represented by nil clients and report `skipped`; only `down` makes readiness fail. |
@@ -60,7 +61,7 @@
 5. Add tests under `tests/` for disabled mode and missing required config.
 
 ### Add Or Change A Protobuf API
-1. For a new API, prefer `make scaffold-proto PROTO=order/v1/order.proto`; it wraps Kratos CLI, fixes this repo's `go_package`, creates the service stub, and runs `make api`.
+1. For a new API, prefer `make scaffold-proto PROTO=order/v1/order.proto`; it wraps Kratos CLI, fixes this repo's `go_package`, creates the service stub, runs `make api`, and prints the remaining wiring checklist.
 2. For existing APIs, edit `api/**/*.proto`; use `third_party/` imports already vendored in this repo, then run `make api`.
 3. Implement the generated server interface in `internal/service/`.
 4. Register new inbound services in `internal/server/grpc.go` and/or `internal/server/http.go`.
@@ -78,7 +79,7 @@
 - Use Kratos logging helpers with a `module` field matching the package area.
 - Remote gRPC clients live in `internal/pkg/grpcx`; current clients use `grpc.DialInsecure`, require target and timeout when enabled, and may add client metrics/circuit breaker middleware.
 - RabbitMQ publisher targets are explicit constants in `internal/data/rabbitmq_publisher.go`; do not publish without exchange and routing key.
-- The scaffold command lives in `cmd/scaffold` with reusable logic in `internal/scaffold`; keep it standard-library based and delegate code generation to Kratos/protoc tooling.
+- The scaffold command lives in `cmd/scaffold` with reusable logic in `internal/scaffold`; keep it standard-library based, delegate code generation to Kratos/protoc tooling, and keep next-step output aligned with this template's service/provider/server registration flow.
 - The Dockerfile is for the default single-service image path: build `./cmd/server` with Go 1.24 and run it on `scratch` as nonroot with default config copied to `/data/conf`.
 - Keep CI lightweight by wiring it through Makefile targets instead of duplicating command lists in `.github/workflows/ci.yml`.
 - K8s defaults should mirror `configs/config.yaml`: optional dependencies disabled, HTTP `/healthz` and `/readyz` probes, HTTP and gRPC ports exposed.
@@ -94,7 +95,7 @@
 
 ## Common Pitfalls
 - `make build` still uses containerized cross-build targets and expects a `CONTAINER` command such as `docker`; use `docker build -t web-template-go:local .` for the normal image path.
-- `make run` uses `go run ./cmd/server/...` without `-conf`; prefer the explicit local run command above when testing default config.
+- `make run` already starts `go run ./cmd/server -conf ./configs`; use the explicit command above when you need to pass different flags.
 - `RUN_SMOKE=1` tests require external services named `codex-postgres`, `codex-redis`, and `codex-mongo`.
 
 ## Maintenance Trigger

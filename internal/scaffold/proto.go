@@ -44,6 +44,7 @@ type ProtoOptions struct {
 type ProtoResult struct {
 	ProtoPath   string
 	ServicePath string
+	NextSteps   []string
 }
 
 func RunProto(ctx context.Context, opts ProtoOptions) (*ProtoResult, error) {
@@ -114,6 +115,7 @@ func RunProto(ctx context.Context, opts ProtoOptions) (*ProtoResult, error) {
 	return &ProtoResult{
 		ProtoPath:   protoPath,
 		ServicePath: servicePath,
+		NextSteps:   protoNextSteps(protoRel, targetDir),
 	}, nil
 }
 
@@ -133,6 +135,9 @@ func NormalizeProtoPath(path string) (string, error) {
 	}
 	if filepath.Base(v) == "." || filepath.Ext(v) != ".proto" {
 		return "", errors.New("proto path must end with .proto")
+	}
+	if strings.TrimSuffix(filepath.Base(v), filepath.Ext(v)) == "" {
+		return "", errors.New("proto path must include a proto file name")
 	}
 	if len(strings.Split(v, "/")) < 3 {
 		return "", errors.New("proto path should include package and version, for example demo/v1/demo.proto")
@@ -228,4 +233,33 @@ func rewriteGoPackage(path, goPackage string) error {
 func serviceFilename(protoRel string) string {
 	base := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
 	return base + ".go"
+}
+
+func protoNextSteps(protoRel, serviceTargetDir string) []string {
+	serviceFile := filepath.ToSlash(filepath.Join(serviceTargetDir, serviceFilename(protoRel)))
+	serviceName := upperCamel(strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel)))
+	return []string{
+		fmt.Sprintf("Implement service methods in %s.", serviceFile),
+		fmt.Sprintf("Add New%sService to internal/service/service.go ProviderSet.", serviceName),
+		fmt.Sprintf("Register the generated %s service in internal/server/grpc.go and internal/server/http.go.", serviceName),
+		"Add biz/data interfaces and adapters only when the module needs domain state or outgoing dependencies.",
+		"Run go generate ./... && go mod tidy, then make verify.",
+	}
+}
+
+func upperCamel(input string) string {
+	parts := strings.FieldsFunc(input, func(r rune) bool {
+		return r == '-' || r == '_' || r == '.'
+	})
+	var out strings.Builder
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		out.WriteString(strings.ToUpper(part[:1]))
+		if len(part) > 1 {
+			out.WriteString(part[1:])
+		}
+	}
+	return out.String()
 }

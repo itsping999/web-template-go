@@ -53,6 +53,12 @@ func runProto(args []string) error {
 
 	fmt.Printf("created proto: %s\n", result.ProtoPath)
 	fmt.Printf("created service: %s\n", result.ServicePath)
+	if len(result.NextSteps) > 0 {
+		fmt.Println("next steps:")
+		for _, step := range result.NextSteps {
+			fmt.Printf("- %s\n", step)
+		}
+	}
 	return nil
 }
 
@@ -65,5 +71,6 @@ Examples:
   make scaffold-proto PROTO=order/v1/order.proto
 
 The proto workflow wraps Kratos CLI generation, fixes go_package for this repo,
-runs make api, and formats the generated service stub.`)
+runs make api, formats the generated service stub, and prints the next wiring
+steps for this template.`)
 }

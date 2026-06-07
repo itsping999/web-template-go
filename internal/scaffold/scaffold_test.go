@@ -23,6 +23,7 @@ func TestNormalizeProtoPath(t *testing.T) {
 		{name: "reject absolute", input: "/tmp/demo.proto", wantErr: true},
 		{name: "reject non proto", input: "demo/v1/demo.txt", wantErr: true},
 		{name: "reject shallow proto", input: "demo.proto", wantErr: true},
+		{name: "reject empty proto name", input: "demo/v1/.proto", wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -108,6 +109,16 @@ func TestRunProtoScaffold(t *testing.T) {
 	}
 	if result.ServicePath != filepath.Join(root, "internal", "service", "demo.go") {
 		t.Fatalf("unexpected service path: %s", result.ServicePath)
+	}
+	wantNextSteps := []string{
+		"Implement service methods in internal/service/demo.go.",
+		"Add NewDemoService to internal/service/service.go ProviderSet.",
+		"Register the generated Demo service in internal/server/grpc.go and internal/server/http.go.",
+		"Add biz/data interfaces and adapters only when the module needs domain state or outgoing dependencies.",
+		"Run go generate ./... && go mod tidy, then make verify.",
+	}
+	if strings.Join(result.NextSteps, "\n") != strings.Join(wantNextSteps, "\n") {
+		t.Fatalf("next steps = %#v, want %#v", result.NextSteps, wantNextSteps)
 	}
 
 	content, err := os.ReadFile(result.ProtoPath)

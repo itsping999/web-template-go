@@ -4,6 +4,7 @@ VERSION=$(shell git describe --tags --always)
 API_PROTO_DIR := ./api
 CURR_DIR := $(shell pwd)
 CMD_DIR := ./cmd/server
+SCAFFOLD_DIR := ./cmd/scaffold
 
 API_PROTO_FILES=$(shell find api -name *.proto)
 
@@ -75,6 +76,12 @@ all:
 .PHONY: run
 run:
 	go run ${CMD_DIR}/...
+
+.PHONY: scaffold-proto
+# create a new Kratos proto and service stub, e.g. make scaffold-proto PROTO=order/v1/order.proto
+scaffold-proto:
+	@test -n "$(PROTO)" || (echo "usage: make scaffold-proto PROTO=order/v1/order.proto" && exit 1)
+	go run ${SCAFFOLD_DIR} proto "$(PROTO)"
 
 .PHONY: docker-build-linux-amd64
 docker-build-linux-amd64:

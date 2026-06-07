@@ -32,6 +32,7 @@
 | Run locally | `go run ./cmd/server -conf ./configs` |
 | Full tests | `go test ./...` |
 | External dependency smoke tests | `RUN_SMOKE=1 go test ./tests -run TestSmokeExternalDependencies` |
+| Scaffold a proto module | `make scaffold-proto PROTO=order/v1/order.proto` |
 | Regenerate proto/API outputs | `make api` |
 | Regenerate Wire and tidy modules | `go generate ./... && go mod tidy` |
 | Install generator tools | `make init` |
@@ -52,8 +53,8 @@
 5. Add tests under `tests/` for disabled mode and missing required config.
 
 ### Add Or Change A Protobuf API
-1. Edit `api/**/*.proto`; use `third_party/` imports already vendored in this repo.
-2. Run `make api` to refresh generated Go, gRPC, HTTP, errors, validation, OpenAPI, and injected tag outputs.
+1. For a new API, prefer `make scaffold-proto PROTO=order/v1/order.proto`; it wraps Kratos CLI, fixes this repo's `go_package`, creates the service stub, and runs `make api`.
+2. For existing APIs, edit `api/**/*.proto`; use `third_party/` imports already vendored in this repo, then run `make api`.
 3. Implement the generated server interface in `internal/service/`.
 4. Register new inbound services in `internal/server/grpc.go` and/or `internal/server/http.go`.
 5. Keep protobuf/generated types out of `internal/biz`; translate at the service boundary.
@@ -70,6 +71,7 @@
 - Use Kratos logging helpers with a `module` field matching the package area.
 - Remote gRPC clients live in `internal/pkg/grpcx`; current clients use `grpc.DialInsecure`, require target and timeout when enabled, and may add client metrics/circuit breaker middleware.
 - RabbitMQ publisher targets are explicit constants in `internal/data/rabbitmq_publisher.go`; do not publish without exchange and routing key.
+- The scaffold command lives in `cmd/scaffold` with reusable logic in `internal/scaffold`; keep it standard-library based and delegate code generation to Kratos/protoc tooling.
 - Do not hand-edit generated `api/**/*.pb.go`, `api/**/*_grpc.pb.go`, `api/**/*_http.pb.go`, or `cmd/server/wire_gen.go`; change the source proto or Wire injector and regenerate.
 
 ## Verification

@@ -95,15 +95,35 @@ docker run --rm -p 8000:8000 -p 9000:9000 -v </path/to/configs>:/data/conf <your
 ## 常用命令
 
 ```bash
-# 生成代码
-go generate ./...
+# 创建新的 proto/API 和 service stub（基于 Kratos CLI）
+make scaffold-proto PROTO=order/v1/order.proto
 
-# 整理依赖
-go mod tidy
+# 生成代码
+make api
+
+# 生成 Wire 并整理依赖
+make generate
 
 # 全量测试
 go test ./...
 ```
+
+## 模块脚手架
+
+模板内置了轻量模块脚手架，复用 Kratos CLI 生成 proto 与 service stub，不额外引入运行时依赖：
+
+```bash
+make scaffold-proto PROTO=order/v1/order.proto
+```
+
+该命令会：
+
+- 在 `api/order/v1/order.proto` 创建 Kratos 标准 CRUD proto 模板
+- 修正 `go_package` 为当前 Go module 下的 `api/...` 路径
+- 在 `internal/service/order.go` 创建 service stub
+- 执行 `make api` 刷新 protobuf / gRPC / HTTP / validate / OpenAPI 生成物
+
+生成后仍需按业务需要补齐 `internal/biz`、`internal/data`，并在 `internal/server/grpc.go` / `internal/server/http.go` 注册新服务。
 
 ## 架构说明
 

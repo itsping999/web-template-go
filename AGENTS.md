@@ -76,7 +76,7 @@ make doctor
 | Contribution workflow | `CONTRIBUTING.md` | Keep change-type verification and generated-file rules aligned with Makefile targets. |
 | First-run tools | `Makefile` (`REQUIRED_TOOLS`, tool version variables, `init`, `doctor`) | Keep README install commands and doctor checks aligned. |
 | Dependency graph | `cmd/server/wire.go`, `cmd/server/wire_gen.go`, provider sets | Update `wire.go` and regenerate `wire_gen.go` after changing providers. |
-| Scaffold command | `cmd/scaffold`, `internal/scaffold` | Wraps Kratos CLI for proto/service generation and prints this template's next wiring steps. |
+| Scaffold command | `cmd/scaffold`, `internal/scaffold` | Wraps Kratos CLI for proto/service generation, auto-registers services in server files, injects config entries, and prints remaining wiring steps. |
 | Protobuf APIs | `api/**/*.proto`, `openapi.yaml` | Generated Go files live next to proto files and OpenAPI is refreshed by `make api`. |
 | Middleware stack | `internal/server/middleware.go` | HTTP and gRPC share recovery, metadata, metrics, logging, validation, optional tracing, and optional rate limit middleware. |
 | Readiness behavior | `internal/service/system.go` | Disabled dependencies are represented by nil clients and report `skipped`; only `down` makes readiness fail. |
@@ -92,7 +92,8 @@ make doctor
 | Full local verification | `make verify` |
 | Tests only | `make test` |
 | External dependency smoke tests | `RUN_SMOKE=1 go test ./tests -run TestSmokeExternalDependencies` |
-| Scaffold a proto module | `make scaffold-proto PROTO=order/v1/order.proto` |
+| Scaffold a proto module | `make scaffold-proto PROTO=order/v1/order.proto` (add `CRUD=1` for CRUD template) |
+| Full scaffold (proto + wire) | `make scaffold-module PROTO=order/v1/order.proto` |
 | Regenerate proto/API outputs | `make api` |
 | Regenerate Wire and tidy modules | `go generate ./... && go mod tidy` |
 | Check generated outputs | `make generated-check` |
@@ -206,10 +207,10 @@ The data layer currently uses remote gRPC forwarding instead of GORM/DB as the o
 5. Add tests under `tests/` for disabled mode and missing required config.
 
 ### Add Or Change A Protobuf API
-1. For a new API, prefer `make scaffold-proto PROTO=order/v1/order.proto`; it wraps Kratos CLI, fixes this repo's `go_package`, creates the service stub, generates biz interface/usecase and data adapter skeletons, runs `make api`, and prints the remaining wiring checklist.
+1. For a new API, prefer `make scaffold-proto PROTO=order/v1/order.proto`; it wraps Kratos CLI, fixes `go_package`, creates service/biz/data stubs, auto-registers in server files, injects config entries, and prints remaining steps. Add `CRUD=1` for standard CRUD template with Create/Get/List/Update/Delete. Use `make scaffold-module` for the full end-to-end flow including wire regeneration.
 2. For existing APIs, edit `api/**/*.proto`; use `third_party/` imports already vendored in this repo, then run `make api`.
 3. Implement the generated server interface in `internal/service/`.
-4. Register new inbound services in `internal/server/grpc.go` and/or `internal/server/http.go`.
+4. Service registration in `internal/server/grpc.go` and `internal/server/http.go` is handled automatically by the scaffold. Only edit manually if using `--skip-auto-register`.
 5. Keep protobuf/generated types out of `internal/biz`; translate at the service boundary.
 
 ### Add Business Behavior
@@ -232,7 +233,7 @@ The data layer currently uses remote gRPC forwarding instead of GORM/DB as the o
 - Use Kratos logging helpers with a `module` field matching the package area.
 - Remote gRPC clients live in `internal/pkg/grpcx`; current clients use `grpc.DialInsecure`, require target and timeout when enabled, and may add client metrics/circuit breaker middleware.
 - RabbitMQ publisher targets are explicit constants in `internal/data/rabbitmq_publisher.go`; do not publish without exchange and routing key.
-- The scaffold command lives in `cmd/scaffold` with reusable logic in `internal/scaffold`; keep it standard-library based, delegate code generation to Kratos/protoc tooling, and keep next-step output aligned with this template's service/provider/server registration flow.
+- The scaffold command lives in `cmd/scaffold` with reusable logic in `internal/scaffold`; keep it standard-library based, delegate code generation to Kratos/protoc tooling, auto-register services in server files, inject config entries, and keep next-step output aligned with this template's flow.
 - `make doctor` is the first-run dependency gate; when adding generator tools, update `REQUIRED_TOOLS`, pinned tool version variables, `make init`, README install commands, and the relevant generation target together.
 - The Dockerfile is for the default single-service image path: build `./cmd/server` with Go 1.24 and run it on `scratch` as nonroot with default config copied to `/data/conf`.
 - Keep CI lightweight by wiring it through Makefile targets instead of duplicating command lists in `.github/workflows/ci.yml`.

@@ -39,10 +39,24 @@ Use `RUN_SMOKE=1 go test ./tests -run TestSmokeExternalDependencies` only when t
 For new API modules, prefer the project scaffold:
 
 ```bash
+# Basic scaffold: proto + service/biz/data stubs + auto-registration + config injection
 make scaffold-proto PROTO=order/v1/order.proto
+
+# CRUD scaffold: adds standard Create/Get/List/Update/Delete methods and fields
+make scaffold-proto PROTO=order/v1/order.proto CRUD=1
+
+# Full end-to-end: scaffold + wire regeneration (one command, ready to implement)
+make scaffold-module PROTO=order/v1/order.proto
 ```
 
-The scaffold wraps Kratos proto/service generation and prints the remaining wiring checklist. Keep protobuf types at the service boundary; business models and interfaces belong in `internal/biz`, while outgoing adapters belong in `internal/data`.
+The scaffold automatically:
+- Generates proto, service, biz, and data layer stubs
+- Registers the service in `internal/server/grpc.go` and `internal/server/http.go`
+- Updates wire provider sets (`service.go`, `biz.go`, `data.go`)
+- Injects a `remote_grpc` config entry in `configs/config.yaml`
+- With `CRUD=1`: generates standard CRUD RPCs, request/response messages, domain model, and repo/usecase method stubs
+
+Keep protobuf types at the service boundary; business models and interfaces belong in `internal/biz`, while outgoing adapters belong in `internal/data`.
 
 ## Generated Files
 

@@ -72,7 +72,9 @@ option go_package = "github.com/example/app/demo/v1;v1";
 	}
 }
 
-func TestRunProtoScaffold(t *testing.T) {
+// setupTestRoot creates a temp directory with all files needed for scaffold testing.
+func setupTestRoot(t *testing.T) string {
+	t.Helper()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/example/app\n\ngo 1.24.0\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -80,13 +82,13 @@ func TestRunProtoScaffold(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, "api"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{"internal/service", "internal/biz", "internal/data"} {
+	for _, dir := range []string{"internal/service", "internal/biz", "internal/data", "internal/server"} {
 		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(dir)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	// Create provider set stubs so updateProviderSets can modify them.
+	// Provider set stubs
 	if err := os.WriteFile(filepath.Join(root, "internal/service/service.go"), []byte(`package service
 
 import "github.com/google/wire"
@@ -111,6 +113,56 @@ var ProviderSet = wire.NewSet()
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
+	// Server stubs
+	if err := os.WriteFile(filepath.Join(root, "internal/server/grpc.go"), []byte(`package server
+
+import (
+	"github.com/go-kratos/kratos/v2/transport/grpc"
+)
+
+func NewGRPCServer() *grpc.Server {
+	srv := grpc.NewServer()
+	return srv
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal/server/http.go"), []byte(`package server
+
+import (
+	"github.com/go-kratos/kratos/v2/transport/http"
+)
+
+func NewHTTPServer() *http.Server {
+	srv := http.NewServer()
+	return srv
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Config stub
+	if err := os.MkdirAll(filepath.Join(root, "configs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "configs/config.yaml"), []byte(`server:
+  http:
+    enabled: true
+
+data:
+  remote_grpc:
+    greeter:
+      enabled: false
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	return root
+}
+
+func TestRunProtoScaffold(t *testing.T) {
+	root := setupTestRoot(t)
 
 	runner := &fakeRunner{t: t, root: root}
 	result, err := RunProto(context.Background(), ProtoOptions{
@@ -200,12 +252,46 @@ var ProviderSet = wire.NewSet()
 		t.Fatalf("data provider set not updated:\n%s", string(dataProvContent))
 	}
 
+	// Verify auto-registration in server files
+	grpcContent, err := os.ReadFile(filepath.Join(root, "internal/server/grpc.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcStr := string(grpcContent)
+	if !strings.Contains(grpcStr, "RegisterDemoServer(srv, demo)") {
+		t.Fatalf("gRPC server not auto-registered:\n%s", grpcStr)
+	}
+	if !strings.Contains(grpcStr, `v1 "github.com/example/app/api/demo/v1"`) {
+		t.Fatalf("gRPC server missing import:\n%s", grpcStr)
+	}
+
+	httpContent, err := os.ReadFile(filepath.Join(root, "internal/server/http.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpStr := string(httpContent)
+	if !strings.Contains(httpStr, "RegisterDemoHTTPServer(srv, demo)") {
+		t.Fatalf("HTTP server not auto-registered:\n%s", httpStr)
+	}
+
+	// Verify config entry was injected
+	configContent, err := os.ReadFile(filepath.Join(root, "configs/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configStr := string(configContent)
+	if !strings.Contains(configStr, "demo:") {
+		t.Fatalf("config entry not injected:\n%s", configStr)
+	}
+	if !strings.Contains(configStr, "target: \"demo:9000\"") {
+		t.Fatalf("config target not injected:\n%s", configStr)
+	}
+
 	wantNextSteps := []string{
 		"Implement DemoRepo interface methods in internal/data/demo.go.",
 		"Implement DemoUsecase methods in internal/biz/demo.go.",
 		"Implement service methods in internal/service/demo.go.",
-		"Register the generated Demo service in internal/server/grpc.go and internal/server/http.go.",
-		"Run go generate ./... && go mod tidy, then make verify.",
+		"Run make generate, then make verify.",
 	}
 	if strings.Join(result.NextSteps, "\n") != strings.Join(wantNextSteps, "\n") {
 		t.Fatalf("next steps = %#v, want %#v", result.NextSteps, wantNextSteps)
@@ -220,37 +306,368 @@ var ProviderSet = wire.NewSet()
 	}
 }
 
-type fakeRunner struct {
-	t        *testing.T
-	root     string
-	commands []string
+func TestRunProtoCRUD(t *testing.T) {
+	root := setupTestRoot(t)
+
+	runner := &fakeRunner{t: t, root: root}
+	result, err := RunProto(context.Background(), ProtoOptions{
+		RootDir:          root,
+		Proto:            "orders/v1/orders.proto",
+		ServiceTargetDir: "internal/service",
+		CRUD:             true,
+		Runner:           runner,
+	})
+	if err != nil {
+		t.Fatalf("RunProto() error = %v", err)
+	}
+
+	// Verify CRUD proto content
+	protoContent, err := os.ReadFile(result.ProtoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protoStr := string(protoContent)
+	for _, want := range []string{
+		"rpc CreateOrder",
+		"rpc GetOrder",
+		"rpc ListOrders",
+		"rpc UpdateOrder",
+		"rpc DeleteOrder",
+		"message Order {",
+		"google.protobuf.Timestamp created_at",
+	} {
+		if !strings.Contains(protoStr, want) {
+			t.Fatalf("CRUD proto missing %q:\n%s", want, protoStr)
+		}
+	}
+
+	// Verify biz stub has CRUD methods
+	bizContent, err := os.ReadFile(result.BizPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bizStr := string(bizContent)
+	for _, want := range []string{
+		"Create(context.Context, *Order)",
+		"Get(context.Context, string)",
+		"List(context.Context, int32, int32)",
+		"Update(context.Context, *Order)",
+		"Delete(context.Context, string)",
+		"func (uc *OrderUsecase) CreateOrder",
+	} {
+		if !strings.Contains(bizStr, want) {
+			t.Fatalf("CRUD biz stub missing %q:\n%s", want, bizStr)
+		}
+	}
+
+	// Verify data stub has CRUD method stubs
+	dataContent, err := os.ReadFile(result.DataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataStr := string(dataContent)
+	for _, want := range []string{
+		"func (r *orderRepo) Create(",
+		"func (r *orderRepo) Get(",
+		"func (r *orderRepo) List(",
+		"func (r *orderRepo) Update(",
+		"func (r *orderRepo) Delete(",
+		`fmt.Errorf("not implemented")`,
+	} {
+		if !strings.Contains(dataStr, want) {
+			t.Fatalf("CRUD data stub missing %q:\n%s", want, dataStr)
+		}
+	}
 }
 
-func (r *fakeRunner) Run(_ context.Context, dir, name string, args ...string) error {
-	relDir, err := filepath.Rel(r.root, dir)
+func TestRunProtoSkipAutoRegister(t *testing.T) {
+	root := setupTestRoot(t)
+
+	runner := &fakeRunner{t: t, root: root}
+	result, err := RunProto(context.Background(), ProtoOptions{
+		RootDir:          root,
+		Proto:            "demo/v1/demo.proto",
+		ServiceTargetDir: "internal/service",
+		SkipAutoRegister: true,
+		Runner:           runner,
+	})
 	if err != nil {
-		r.t.Fatal(err)
+		t.Fatalf("RunProto() error = %v", err)
 	}
-	relDir = filepath.ToSlash(relDir)
-	r.commands = append(r.commands, relDir+"|"+name+" "+strings.Join(args, " "))
 
-	if name == "kratos" && strings.Join(args, " ") == "proto add demo/v1/demo.proto" {
-		protoPath := filepath.Join(dir, "demo", "v1", "demo.proto")
-		if err := os.MkdirAll(filepath.Dir(protoPath), 0o755); err != nil {
-			return err
+	// Server files should NOT be modified
+	grpcContent, err := os.ReadFile(filepath.Join(root, "internal/server/grpc.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(grpcContent), "RegisterDemoServer") {
+		t.Fatalf("gRPC server should not be auto-registered with SkipAutoRegister")
+	}
+
+	// Next steps should include manual registration
+	if len(result.NextSteps) == 0 {
+		t.Fatalf("expected next steps")
+	}
+	if !strings.Contains(result.NextSteps[0], "Register") {
+		t.Fatalf("first next step should mention registration, got: %s", result.NextSteps[0])
+	}
+}
+
+func TestRunProtoIdempotent(t *testing.T) {
+	root := setupTestRoot(t)
+	runner := &fakeRunner{t: t, root: root}
+
+	_, err := RunProto(context.Background(), ProtoOptions{
+		RootDir:          root,
+		Proto:            "demo/v1/demo.proto",
+		ServiceTargetDir: "internal/service",
+		Runner:           runner,
+	})
+	if err != nil {
+		t.Fatalf("first RunProto() error = %v", err)
+	}
+
+	// Second run should fail because proto already exists
+	_, err = RunProto(context.Background(), ProtoOptions{
+		RootDir:          root,
+		Proto:            "demo/v1/demo.proto",
+		ServiceTargetDir: "internal/service",
+		Runner:           runner,
+	})
+	if err == nil {
+		t.Fatalf("expected error on duplicate proto")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected 'already exists' error, got: %v", err)
+	}
+}
+
+func TestRegisterServiceInServer(t *testing.T) {
+	t.Run("grpc registration", func(t *testing.T) {
+		dir := t.TempDir()
+		filePath := filepath.Join(dir, "grpc.go")
+		original := `package server
+
+import (
+	"github.com/go-kratos/kratos/v2/transport/grpc"
+)
+
+func NewGRPCServer() *grpc.Server {
+	srv := grpc.NewServer()
+	return srv
+}
+`
+		if err := os.WriteFile(filePath, []byte(original), 0o644); err != nil {
+			t.Fatal(err)
 		}
-		return os.WriteFile(protoPath, []byte(`syntax = "proto3";
 
-package demo.v1;
+		if err := registerServiceInServer(filePath, "Order", "github.com/example/app/api/order/v1", "v1", true); err != nil {
+			t.Fatal(err)
+		}
 
-option go_package = "github.com/example/app/demo/v1;v1";
-`), 0o644)
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		str := string(content)
+		if !strings.Contains(str, `v1 "github.com/example/app/api/order/v1"`) {
+			t.Fatalf("missing import:\n%s", str)
+		}
+		if !strings.Contains(str, "v1.RegisterOrderServer(srv, order)") {
+			t.Fatalf("missing registration:\n%s", str)
+		}
+	})
+
+	t.Run("http registration", func(t *testing.T) {
+		dir := t.TempDir()
+		filePath := filepath.Join(dir, "http.go")
+		original := `package server
+
+import (
+	"github.com/go-kratos/kratos/v2/transport/http"
+)
+
+func NewHTTPServer() *http.Server {
+	srv := http.NewServer()
+	return srv
+}
+`
+		if err := os.WriteFile(filePath, []byte(original), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := registerServiceInServer(filePath, "Order", "github.com/example/app/api/order/v1", "v1", false); err != nil {
+			t.Fatal(err)
+		}
+
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		str := string(content)
+		if !strings.Contains(str, "v1.RegisterOrderHTTPServer(srv, order)") {
+			t.Fatalf("missing HTTP registration:\n%s", str)
+		}
+	})
+
+	t.Run("idempotent", func(t *testing.T) {
+		dir := t.TempDir()
+		filePath := filepath.Join(dir, "grpc.go")
+		original := `package server
+
+import (
+	v1 "github.com/example/app/api/order/v1"
+	"github.com/go-kratos/kratos/v2/transport/grpc"
+)
+
+func NewGRPCServer() *grpc.Server {
+	srv := grpc.NewServer()
+	v1.RegisterOrderServer(srv, order)
+	return srv
+}
+`
+		if err := os.WriteFile(filePath, []byte(original), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := registerServiceInServer(filePath, "Order", "github.com/example/app/api/order/v1", "v1", true); err != nil {
+			t.Fatal(err)
+		}
+
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Count occurrences of RegisterOrderServer - should be exactly 1
+		count := strings.Count(string(content), "RegisterOrderServer")
+		if count != 1 {
+			t.Fatalf("expected 1 RegisterOrderServer, got %d:\n%s", count, string(content))
+		}
+	})
+}
+
+func TestInjectConfigEntry(t *testing.T) {
+	t.Run("adds new entry", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.yaml")
+		original := `data:
+  remote_grpc:
+    greeter:
+      enabled: false
+`
+		if err := os.WriteFile(configPath, []byte(original), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := injectConfigEntry(configPath, "order/v1/order.proto"); err != nil {
+			t.Fatal(err)
+		}
+
+		content, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		str := string(content)
+		if !strings.Contains(str, "order:") {
+			t.Fatalf("missing order entry:\n%s", str)
+		}
+		if !strings.Contains(str, `target: "order:9000"`) {
+			t.Fatalf("missing target:\n%s", str)
+		}
+		if !strings.Contains(str, "circuitbreaker_enabled: false") {
+			t.Fatalf("missing circuitbreaker:\n%s", str)
+		}
+	})
+
+	t.Run("idempotent", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.yaml")
+		original := `data:
+  remote_grpc:
+    order:
+      enabled: false
+`
+		if err := os.WriteFile(configPath, []byte(original), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := injectConfigEntry(configPath, "order/v1/order.proto"); err != nil {
+			t.Fatal(err)
+		}
+
+		content, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count := strings.Count(string(content), "order:")
+		if count != 1 {
+			t.Fatalf("expected 1 'order:', got %d:\n%s", count, string(content))
+		}
+	})
+
+	t.Run("no remote_grpc section", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.yaml")
+		original := `server:
+  http:
+    enabled: true
+`
+		if err := os.WriteFile(configPath, []byte(original), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := injectConfigEntry(configPath, "order/v1/order.proto"); err != nil {
+			t.Fatal(err)
+		}
+
+		content, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		str := string(content)
+		if !strings.Contains(str, "remote_grpc:") {
+			t.Fatalf("missing remote_grpc section:\n%s", str)
+		}
+		if !strings.Contains(str, "order:") {
+			t.Fatalf("missing order entry:\n%s", str)
+		}
+	})
+}
+
+func TestRewriteProtoAsCRUD(t *testing.T) {
+	dir := t.TempDir()
+	protoPath := filepath.Join(dir, "orders.proto")
+	if err := os.WriteFile(protoPath, []byte("placeholder"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if name == "kratos" && strings.Join(args, " ") == "proto server api/demo/v1/demo.proto --target-dir=internal/service" {
-		servicePath := filepath.Join(r.root, "internal", "service", "demo.go")
-		return os.WriteFile(servicePath, []byte("package service\n"), 0o644)
+
+	if err := rewriteProtoAsCRUD(protoPath, "orders/v1/orders.proto"); err != nil {
+		t.Fatal(err)
 	}
-	return nil
+
+	content, err := os.ReadFile(protoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	str := string(content)
+	for _, want := range []string{
+		"package orders.v1;",
+		"service Orders {",
+		"rpc CreateOrder(CreateOrderRequest) returns (Order);",
+		"rpc GetOrder(GetOrderRequest) returns (Order);",
+		"rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);",
+		"rpc UpdateOrder(UpdateOrderRequest) returns (Order);",
+		"rpc DeleteOrder(DeleteOrderRequest) returns (google.protobuf.Empty);",
+		"message Order {",
+		"string id = 1;",
+		"google.protobuf.Timestamp created_at = 20;",
+		"message ListOrdersResponse {",
+		"repeated Order items = 1;",
+	} {
+		if !strings.Contains(str, want) {
+			t.Fatalf("CRUD proto missing %q:\n%s", want, str)
+		}
+	}
 }
 
 func TestSingularize(t *testing.T) {
@@ -291,4 +708,54 @@ func TestLowerCamel(t *testing.T) {
 			}
 		})
 	}
+}
+
+type fakeRunner struct {
+	t        *testing.T
+	root     string
+	commands []string
+}
+
+func (r *fakeRunner) Run(_ context.Context, dir, name string, args ...string) error {
+	relDir, err := filepath.Rel(r.root, dir)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	relDir = filepath.ToSlash(relDir)
+	r.commands = append(r.commands, relDir+"|"+name+" "+strings.Join(args, " "))
+
+	if name == "kratos" && strings.Join(args, " ") == "proto add demo/v1/demo.proto" {
+		protoPath := filepath.Join(dir, "demo", "v1", "demo.proto")
+		if err := os.MkdirAll(filepath.Dir(protoPath), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(protoPath, []byte(`syntax = "proto3";
+
+package demo.v1;
+
+option go_package = "github.com/example/app/demo/v1;v1";
+`), 0o644)
+	}
+	if name == "kratos" && strings.Join(args, " ") == "proto server api/demo/v1/demo.proto --target-dir=internal/service" {
+		servicePath := filepath.Join(r.root, "internal", "service", "demo.go")
+		return os.WriteFile(servicePath, []byte("package service\n"), 0o644)
+	}
+	// Handle orders proto
+	if name == "kratos" && strings.Join(args, " ") == "proto add orders/v1/orders.proto" {
+		protoPath := filepath.Join(dir, "orders", "v1", "orders.proto")
+		if err := os.MkdirAll(filepath.Dir(protoPath), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(protoPath, []byte(`syntax = "proto3";
+
+package orders.v1;
+
+option go_package = "github.com/example/app/orders/v1;v1";
+`), 0o644)
+	}
+	if name == "kratos" && strings.Join(args, " ") == "proto server api/orders/v1/orders.proto --target-dir=internal/service" {
+		servicePath := filepath.Join(r.root, "internal", "service", "orders.go")
+		return os.WriteFile(servicePath, []byte("package service\n"), 0o644)
+	}
+	return nil
 }

@@ -42,7 +42,8 @@ help:
 	@echo "  make api                         Regenerate proto/API outputs"
 	@echo "  make generated-check             Check generated proto/OpenAPI/Wire outputs"
 	@echo "  make generate                    Run go generate and go mod tidy"
-	@echo "  make scaffold-proto PROTO=...    Create a Kratos proto and service stub"
+	@echo "  make scaffold-proto PROTO=...    Create a Kratos proto and service stub (CRUD=1 for CRUD)"
+	@echo "  make scaffold-module PROTO=...   Full scaffold: proto + wire + generate"
 	@echo "  make docker-build                Build the default Docker image"
 	@echo "  make e2e-smoke                   End-to-end smoke test (build, start, verify endpoints)"
 .PHONY: doctor
@@ -173,7 +174,24 @@ docker-build:
 # create a new Kratos proto and service stub, e.g. make scaffold-proto PROTO=order/v1/order.proto
 scaffold-proto:
 	@test -n "$(PROTO)" || (echo "usage: make scaffold-proto PROTO=order/v1/order.proto" && exit 1)
-	go run ${SCAFFOLD_DIR} proto "$(PROTO)"
+	@if [ "$(CRUD)" = "1" ]; then \
+		go run ${SCAFFOLD_DIR} proto --crud "$(PROTO)"; \
+	else \
+		go run ${SCAFFOLD_DIR} proto "$(PROTO)"; \
+	fi
+
+.PHONY: scaffold-module
+# full end-to-end scaffold: proto + wire regeneration + verification prompt
+scaffold-module:
+	@test -n "$(PROTO)" || (echo "usage: make scaffold-module PROTO=order/v1/order.proto" && exit 1)
+	@if [ "$(CRUD)" = "1" ]; then \
+		go run ${SCAFFOLD_DIR} proto --crud "$(PROTO)"; \
+	else \
+		go run ${SCAFFOLD_DIR} proto "$(PROTO)"; \
+	fi
+	$(MAKE) generate
+	@echo ""
+	@echo "scaffold complete. Run make verify to check.
 
 .PHONY: docker-build-linux-amd64
 docker-build-linux-amd64:

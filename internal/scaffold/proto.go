@@ -44,6 +44,8 @@ type ProtoOptions struct {
 	ServiceTargetDir string
 	BizTargetDir     string
 	DataTargetDir    string
+	CRUD             bool
+	SkipAutoRegister bool
 	Runner           Runner
 }
 
@@ -91,6 +93,13 @@ func RunProto(ctx context.Context, opts ProtoOptions) (*ProtoResult, error) {
 	if err := runner.Run(ctx, apiDir, "kratos", "proto", "add", protoRel); err != nil {
 		return nil, fmt.Errorf("kratos proto add: %w", err)
 	}
+
+	if opts.CRUD {
+		if err := rewriteProtoAsCRUD(protoPath, protoRel); err != nil {
+			return nil, fmt.Errorf("rewrite proto as CRUD: %w", err)
+		}
+	}
+
 	modulePath, err := modulePath(root)
 	if err != nil {
 		return nil, err
@@ -129,12 +138,12 @@ func RunProto(ctx context.Context, opts ProtoOptions) (*ProtoResult, error) {
 		return nil, err
 	}
 
-	bizPath, err := writeBizStub(root, protoRel, bizDir, modulePath)
+	bizPath, err := writeBizStub(root, protoRel, bizDir, modulePath, opts.CRUD)
 	if err != nil {
 		return nil, fmt.Errorf("generate biz stub: %w", err)
 	}
 
-	dataPath, err := writeDataStub(root, protoRel, dataDir, modulePath)
+	dataPath, err := writeDataStub(root, protoRel, dataDir, modulePath, opts.CRUD)
 	if err != nil {
 		return nil, fmt.Errorf("generate data stub: %w", err)
 	}
@@ -143,12 +152,37 @@ func RunProto(ctx context.Context, opts ProtoOptions) (*ProtoResult, error) {
 		return nil, fmt.Errorf("update provider sets: %w", err)
 	}
 
+	if !opts.SkipAutoRegister {
+		baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
+		svcName := upperCamel(baseName)
+		protoPkg := protoPackage(protoRel)
+		importPath := fmt.Sprintf("%s/api/%s", modulePath, filepath.ToSlash(filepath.Dir(protoRel)))
+
+		if err := registerServiceInServer(filepath.Join(root, "internal", "server", "grpc.go"), svcName, importPath, protoPkg, true); err != nil {
+			return nil, fmt.Errorf("register gRPC service: %w", err)
+		}
+		if err := registerServiceInServer(filepath.Join(root, "internal", "server", "http.go"), svcName, importPath, protoPkg, false); err != nil {
+			return nil, fmt.Errorf("register HTTP service: %w", err)
+		}
+	}
+
+	if err := injectConfigEntry(filepath.Join(root, "configs", "config.yaml"), protoRel); err != nil {
+		return nil, fmt.Errorf("inject config entry: %w", err)
+	}
+
+	nextSteps := protoNextSteps(protoRel, targetDir, bizDir, dataDir)
+	if opts.SkipAutoRegister {
+		nextSteps = append([]string{
+			fmt.Sprintf("Register the generated %s service in internal/server/grpc.go and internal/server/http.go.", upperCamel(strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel)))),
+		}, nextSteps...)
+	}
+
 	return &ProtoResult{
 		ProtoPath:   protoPath,
 		ServicePath: servicePath,
 		BizPath:     bizPath,
 		DataPath:    dataPath,
-		NextSteps:   protoNextSteps(protoRel, targetDir, bizDir, dataDir),
+		NextSteps:   nextSteps,
 	}, nil
 }
 
@@ -319,10 +353,10 @@ func updateProviderSets(root, protoRel, serviceDir, bizDir, dataDir string) erro
 	return nil
 }
 
+// protoNextSteps returns the remaining manual steps after auto-registration.
 func protoNextSteps(protoRel, serviceTargetDir, bizDir, dataDir string) []string {
 	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
 	serviceFile := filepath.ToSlash(filepath.Join(serviceTargetDir, serviceFilename(protoRel)))
-	serviceName := upperCamel(baseName)
 	singular := singularize(baseName)
 	bizFile := filepath.ToSlash(filepath.Join(bizDir, baseName+".go"))
 	dataFile := filepath.ToSlash(filepath.Join(dataDir, baseName+".go"))
@@ -330,38 +364,302 @@ func protoNextSteps(protoRel, serviceTargetDir, bizDir, dataDir string) []string
 		fmt.Sprintf("Implement %sRepo interface methods in %s.", upperCamel(singular), dataFile),
 		fmt.Sprintf("Implement %sUsecase methods in %s.", upperCamel(singular), bizFile),
 		fmt.Sprintf("Implement service methods in %s.", serviceFile),
-		fmt.Sprintf("Register the generated %s service in internal/server/grpc.go and internal/server/http.go.", serviceName),
-		"Run go generate ./... && go mod tidy, then make verify.",
+		"Run make generate, then make verify.",
 	}
 }
 
-func writeBizStub(root, protoRel, bizDir, modulePath string) (string, error) {
+// protoPackage returns the protobuf package name from a proto relative path.
+// For example "order/v1/order.proto" returns "order.v1".
+func protoPackage(protoRel string) string {
+	dir := filepath.ToSlash(filepath.Dir(protoRel))
+	parts := strings.Split(dir, "/")
+	return strings.Join(parts, ".")
+}
+
+// rewriteProtoAsCRUD replaces the default Kratos-generated proto content with
+// a full CRUD service definition including Create, Get, List, Update, Delete RPCs.
+func rewriteProtoAsCRUD(protoPath, protoRel string) error {
+	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
+	pkg := protoPackage(protoRel)
+	svcName := upperCamel(baseName)
+	singular := upperCamel(singularize(baseName))
+	plural := svcName
+
+	lines := []string{
+		`syntax = "proto3";`,
+		``,
+		`package ` + pkg + `;`,
+		``,
+		`option go_package = "placeholder";`,
+		``,
+		`import "google/protobuf/timestamp.proto";`,
+		`import "google/protobuf/empty.proto";`,
+		`import "validate/validate.proto";`,
+		``,
+		`service ` + svcName + ` {`,
+		`  rpc Create` + singular + `(Create` + singular + `Request) returns (` + singular + `);`,
+		`  rpc Get` + singular + `(Get` + singular + `Request) returns (` + singular + `);`,
+		`  rpc List` + plural + `(List` + plural + `Request) returns (List` + plural + `Response);`,
+		`  rpc Update` + singular + `(Update` + singular + `Request) returns (` + singular + `);`,
+		`  rpc Delete` + singular + `(Delete` + singular + `Request) returns (google.protobuf.Empty);`,
+		`}`,
+		``,
+		`message ` + singular + ` {`,
+		`  string id = 1;`,
+		`  // TODO: add domain fields`,
+		`  google.protobuf.Timestamp created_at = 20;`,
+		`  google.protobuf.Timestamp updated_at = 21;`,
+		`}`,
+		``,
+		`message Create` + singular + `Request {`,
+		`  // TODO: add creation fields`,
+		`}`,
+		``,
+		`message Get` + singular + `Request {`,
+		`  string id = 1 [(validate.rules).string.min_len = 1];`,
+		`}`,
+		``,
+		`message List` + plural + `Request {`,
+		`  int32 page = 1;`,
+		`  int32 page_size = 2;`,
+		`}`,
+		``,
+		`message List` + plural + `Response {`,
+		`  repeated ` + singular + ` items = 1;`,
+		`  int32 total = 2;`,
+		`}`,
+		``,
+		`message Update` + singular + `Request {`,
+		`  string id = 1 [(validate.rules).string.min_len = 1];`,
+		`  // TODO: add updatable fields`,
+		`}`,
+		``,
+		`message Delete` + singular + `Request {`,
+		`  string id = 1 [(validate.rules).string.min_len = 1];`,
+		`}`,
+		``,
+	}
+
+	content := strings.Join(lines, "\n")
+	return os.WriteFile(protoPath, []byte(content), 0o644)
+}
+
+// registerServiceInServer adds the service registration call and import to a
+// server file (grpc.go or http.go). For gRPC it calls Register<Svc>Server,
+// for HTTP it calls Register<Svc>HTTPServer.
+func registerServiceInServer(filePath, svcName, importPath, protoPkg string, isGRPC bool) error {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+	str := string(content)
+
+	var registerCall string
+	if isGRPC {
+		registerCall = fmt.Sprintf("%s.Register%sServer(srv, %s)", protoPkg, svcName, lowerCamel(singularize(svcName)))
+	} else {
+		registerCall = fmt.Sprintf("%s.Register%sHTTPServer(srv, %s)", protoPkg, svcName, lowerCamel(singularize(svcName)))
+	}
+
+	// Already registered
+	if strings.Contains(str, registerCall) {
+		return nil
+	}
+
+	// Add import
+	alias := protoPkg
+	str = addImport(str, alias, importPath)
+
+	// Add registration call after srv := ...NewServer(...)
+	idx := strings.Index(str, "srv := ")
+	if idx < 0 {
+		// Try alternate pattern
+		idx = strings.Index(str, "srv:=")
+	}
+	if idx < 0 {
+		return fmt.Errorf("cannot find 'srv :=' in %s", filePath)
+	}
+	// Find end of line
+	eol := strings.Index(str[idx:], "\n")
+	if eol < 0 {
+		eol = len(str) - idx
+	}
+	insertPos := idx + eol
+	str = str[:insertPos] + "\n\t" + registerCall + str[insertPos:]
+
+	return os.WriteFile(filePath, []byte(str), 0o644)
+}
+
+// addImport adds an import line to a Go file if not already present.
+func addImport(content, alias, importPath string) string {
+	if strings.Contains(content, `"`+importPath+`"`) {
+		return content
+	}
+
+	// Find the import block
+	lines := strings.Split(content, "\n")
+	inImport := false
+	parenDepth := 0
+	insertIdx := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "import") {
+			if strings.Contains(trimmed, "(") {
+				inImport = true
+				parenDepth++
+				continue
+			}
+			// single import line
+			continue
+		}
+		if inImport {
+			if strings.Contains(trimmed, "(") {
+				parenDepth++
+			}
+			if strings.Contains(trimmed, ")") {
+				parenDepth--
+				if parenDepth == 0 {
+					insertIdx = i
+					break
+				}
+			}
+		}
+	}
+
+	if insertIdx < 0 {
+		return content
+	}
+
+	importLine := fmt.Sprintf("\t%s \"%s\"", alias, importPath)
+	lines = append(lines[:insertIdx], append([]string{importLine}, lines[insertIdx:]...)...)
+	return strings.Join(lines, "\n")
+}
+
+// injectConfigEntry adds a remote_grpc config entry for the new module
+// in configs/config.yaml if not already present.
+func injectConfigEntry(configPath, protoRel string) error {
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	str := string(content)
+
+	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
+	entry := fmt.Sprintf("    %s:", baseName)
+
+	if strings.Contains(str, entry) {
+		return nil
+	}
+
+	block := fmt.Sprintf(`%s:
+      enabled: false
+      target: "%s:9000"
+      timeout: 500ms
+      circuitbreaker_enabled: false
+`, entry, baseName)
+
+	// Insert after "remote_grpc:" line
+	idx := strings.Index(str, "remote_grpc:")
+	if idx < 0 {
+		// Append at end
+		str = strings.TrimRight(str, "\n") + "\n\nremote_grpc:\n" + block
+		return os.WriteFile(configPath, []byte(str), 0o644)
+	}
+
+	eol := strings.Index(str[idx:], "\n")
+	if eol < 0 {
+		str += "\n" + block
+	} else {
+		insertPos := idx + eol + 1
+		str = str[:insertPos] + block + str[insertPos:]
+	}
+
+	return os.WriteFile(configPath, []byte(str), 0o644)
+}
+
+// writeBizStub generates a biz-layer stub file.
+func writeBizStub(root, protoRel, bizDir, modulePath string, crud bool) (string, error) {
 	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
 	singular := singularize(baseName)
 	interfaceName := upperCamel(singular) + "Repo"
 	usecaseName := upperCamel(singular) + "Usecase"
 	constructorName := "New" + usecaseName
+	modelName := upperCamel(singular)
+
+	repoMethods := "\t// TODO: define domain methods, for example:\n\t// Save(context.Context, *" + modelName + ") (*" + modelName + ", error)"
+	ucMethods := "\t// TODO: implement business methods"
+
+	if crud {
+		repoMethods = fmt.Sprintf(`	Create(context.Context, *%s) (*%s, error)
+	Get(context.Context, string) (*%s, error)
+	List(context.Context, int32, int32) ([]*%s, int32, error)
+	Update(context.Context, *%s) (*%s, error)
+	Delete(context.Context, string) error`, modelName, modelName, modelName, modelName, modelName, modelName)
+		ucMethods = fmt.Sprintf(`// Create%s creates a new %s.
+func (uc *%s) Create%s(ctx context.Context, %s *%s) (*%s, error) {
+	// TODO: add validation and business rules
+	return uc.repo.Create(ctx, %s)
+}
+
+// Get%s retrieves a %s by ID.
+func (uc *%s) Get%s(ctx context.Context, id string) (*%s, error) {
+	return uc.repo.Get(ctx, id)
+}
+
+// List%s returns a paginated list of %ss.
+func (uc *%s) List%s(ctx context.Context, page, pageSize int32) ([]*%s, int32, error) {
+	return uc.repo.List(ctx, page, pageSize)
+}
+
+// Update%s updates an existing %s.
+func (uc *%s) Update%s(ctx context.Context, %s *%s) (*%s, error) {
+	// TODO: add validation and business rules
+	return uc.repo.Update(ctx, %s)
+}
+
+// Delete%s deletes a %s by ID.
+func (uc *%s) Delete%s(ctx context.Context, id string) error {
+	return uc.repo.Delete(ctx, id)
+}`,
+			modelName, singular,
+			usecaseName, modelName, lowerCamel(singular), modelName, modelName, lowerCamel(singular),
+			modelName, singular,
+			usecaseName, modelName, modelName,
+			modelName, singular,
+			usecaseName, modelName, modelName,
+			modelName, singular,
+			usecaseName, modelName, lowerCamel(singular), modelName, modelName, lowerCamel(singular),
+			modelName, singular,
+			usecaseName, modelName,
+		)
+	}
 
 	tpl := `package biz
 
 import (
+	"context"
+
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 )
 
 var (
-	Err` + upperCamel(singular) + `NotFound = errors.NotFound("` + strings.ToUpper(baseName) + `_NOT_FOUND", "` + singular + ` not found")
+	Err` + modelName + `NotFound = errors.NotFound("` + strings.ToUpper(baseName) + `_NOT_FOUND", "` + singular + ` not found")
 )
 
-// ` + upperCamel(singular) + ` is the domain model for ` + singular + `.
-type ` + upperCamel(singular) + ` struct {
-	// TODO: add domain fields, for example: ID, Name, CreatedAt
+// ` + modelName + ` is the domain model for ` + singular + `.
+type ` + modelName + ` struct {
+	ID string
+	// TODO: add domain fields
 }
 
 // ` + interfaceName + ` defines the outbound port for ` + singular + ` persistence.
 type ` + interfaceName + ` interface {
-	// TODO: define domain methods, for example:
-	// Save(context.Context, *` + upperCamel(singular) + `) (*` + upperCamel(singular) + `, error)
+` + repoMethods + `
 }
 
 // ` + usecaseName + ` implements ` + singular + ` business rules.
@@ -377,6 +675,8 @@ func ` + constructorName + `(repo ` + interfaceName + `, logger log.Logger) *` +
 		log:  log.NewHelper(log.With(logger, "module", "biz/` + baseName + `")),
 	}
 }
+
+` + ucMethods + `
 `
 
 	if err := ensureOrCreateDir(filepath.Join(root, bizDir)); err != nil {
@@ -389,16 +689,55 @@ func ` + constructorName + `(repo ` + interfaceName + `, logger log.Logger) *` +
 	return path, nil
 }
 
-func writeDataStub(root, protoRel, dataDir, modulePath string) (string, error) {
+// writeDataStub generates a data-layer stub file.
+func writeDataStub(root, protoRel, dataDir, modulePath string, crud bool) (string, error) {
 	baseName := strings.TrimSuffix(filepath.Base(protoRel), filepath.Ext(protoRel))
 	singular := singularize(baseName)
 	repoName := lowerCamel(singular) + "Repo"
 	interfaceName := upperCamel(singular) + "Repo"
 	constructorName := "New" + upperCamel(singular) + "Repo"
+	modelName := upperCamel(singular)
+
+	methodImpls := "\t// TODO: implement biz." + interfaceName + " methods."
+
+	if crud {
+		methodImpls = fmt.Sprintf(`func (r *%s) Create(ctx context.Context, %s *biz.%s) (*biz.%s, error) {
+	// TODO: implement with actual persistence (e.g. GORM, MongoDB)
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (r *%s) Get(ctx context.Context, id string) (*biz.%s, error) {
+	// TODO: implement with actual persistence
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (r *%s) List(ctx context.Context, page, pageSize int32) ([]*biz.%s, int32, error) {
+	// TODO: implement with actual persistence
+	return nil, 0, fmt.Errorf("not implemented")
+}
+
+func (r *%s) Update(ctx context.Context, %s *biz.%s) (*biz.%s, error) {
+	// TODO: implement with actual persistence
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (r *%s) Delete(ctx context.Context, id string) error {
+	// TODO: implement with actual persistence
+	return fmt.Errorf("not implemented")
+}`,
+			repoName, lowerCamel(singular), modelName, modelName,
+			repoName, modelName,
+			repoName, modelName,
+			repoName, lowerCamel(singular), modelName, modelName,
+			repoName,
+		)
+	}
 
 	tpl := `package data
 
 import (
+	"context"
+
 	"github.com/go-kratos/kratos/v2/log"
 	"` + modulePath + `/internal/biz` + `"
 )
@@ -414,7 +753,7 @@ func ` + constructorName + `(logger log.Logger) biz.` + interfaceName + ` {
 	}
 }
 
-// TODO: implement biz.` + interfaceName + ` methods.
+` + methodImpls + `
 `
 
 	if err := ensureOrCreateDir(filepath.Join(root, dataDir)); err != nil {

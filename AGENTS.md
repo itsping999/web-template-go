@@ -1,0 +1,88 @@
+# Agent Instructions
+
+## Project Purpose
+- This is a Go 1.24 Kratos microservice template with HTTP, gRPC, WebSocket, MQTT, RabbitMQ, PostgreSQL, Redis, MongoDB, Kubernetes discovery, metrics, and tracing providers behind config switches.
+- Keep the architecture lightweight: transport adapters call services, services call biz usecases, biz owns interfaces and domain models, data implements outgoing adapters, and `internal/pkg/*` owns infrastructure clients.
+
+## Project Map
+- `cmd/server/` - process entrypoint, YAML loading, environment overrides, Kratos app assembly, and Wire injectors.
+- `api/` - protobuf definitions and generated `.pb.go`, `_grpc.pb.go`, `_http.pb.go`, validation, errors, and OpenAPI outputs.
+- `internal/server/` - inbound transports and shared server middleware.
+- `internal/service/` - application service implementations for generated APIs and transport callbacks.
+- `internal/biz/` - usecases, domain structs, and repository/event publisher interfaces.
+- `internal/data/` - implementations of biz interfaces and outgoing adapters.
+- `internal/pkg/` - provider sets plus DB, discovery, remote gRPC, messaging, metrics, tracing, and logging helpers.
+- `configs/config.yaml` - default runtime config; defaults should keep optional external dependencies disabled for local startup.
+- `tests/` - package-level tests for provider behavior, usecase behavior, and smoke tests.
+
+## Source Of Truth
+| Concern | File/Directory | Notes |
+| --- | --- | --- |
+| Runtime config shape | `internal/conf/config.go`, `internal/server/config.go`, `internal/data/config.go`, `internal/pkg/*` | Add fields here before using them in YAML or env overrides. |
+| Default config | `configs/config.yaml` | Keep defaults runnable without PostgreSQL, Redis, MongoDB, RabbitMQ, MQTT, WebSocket, tracing, or Kubernetes. |
+| Env overrides | `cmd/server/env.go` | Add explicit `APP_...` overrides for new deploy-time config keys. |
+| Dependency graph | `cmd/server/wire.go`, `cmd/server/wire_gen.go`, provider sets | Update `wire.go` and regenerate `wire_gen.go` after changing providers. |
+| Protobuf APIs | `api/**/*.proto` | Generated Go files live next to proto files and are refreshed by `make api`. |
+| Middleware stack | `internal/server/middleware.go` | HTTP and gRPC share recovery, metadata, metrics, logging, validation, optional tracing, and optional rate limit middleware. |
+| Readiness behavior | `internal/service/system.go` | Disabled dependencies are represented by nil clients and report `skipped`; only `down` makes readiness fail. |
+
+## Commands
+| Task | Command |
+| --- | --- |
+| Run locally | `go run ./cmd/server -conf ./configs` |
+| Full tests | `go test ./...` |
+| External dependency smoke tests | `RUN_SMOKE=1 go test ./tests -run TestSmokeExternalDependencies` |
+| Regenerate proto/API outputs | `make api` |
+| Regenerate Wire and tidy modules | `go generate ./... && go mod tidy` |
+| Install generator tools | `make init` |
+| Cross-build binaries | `CONTAINER=docker make build` |
+
+## Common Workflows
+### Add Or Change Runtime Config
+1. Add the typed field in the owning config struct.
+2. Add or update `configs/config.yaml` with safe defaults.
+3. Add environment overrides in `cmd/server/env.go` for deployment-facing keys.
+4. Add focused tests for disabled mode, missing required fields, and any defaulting behavior.
+
+### Add A New Provider Or Adapter
+1. Put infrastructure clients in `internal/pkg/<name>` and expose a `ProviderSet` when Wire should construct it.
+2. Return `(nil, func(){}, nil)` when an optional provider is disabled; tests expect disabled providers to be no-op and still return cleanup functions.
+3. Add the provider set to `internal/pkg/provider.go` or the appropriate layer provider set.
+4. Update `cmd/server/wire.go`, then run `go generate ./...` to refresh `cmd/server/wire_gen.go`.
+5. Add tests under `tests/` for disabled mode and missing required config.
+
+### Add Or Change A Protobuf API
+1. Edit `api/**/*.proto`; use `third_party/` imports already vendored in this repo.
+2. Run `make api` to refresh generated Go, gRPC, HTTP, errors, validation, OpenAPI, and injected tag outputs.
+3. Implement the generated server interface in `internal/service/`.
+4. Register new inbound services in `internal/server/grpc.go` and/or `internal/server/http.go`.
+5. Keep protobuf/generated types out of `internal/biz`; translate at the service boundary.
+
+### Add Business Behavior
+1. Define domain interfaces in `internal/biz`.
+2. Implement outgoing behavior in `internal/data`.
+3. Keep transport details in `internal/server` or `internal/service`.
+4. Test business flow with mocks in `tests/`, following `tests/greeter_usecase_test.go`.
+
+## Conventions
+- Optional runtime components are controlled by `enabled` config flags instead of being removed from the Wire graph.
+- Constructor cleanup functions must be safe to call even when initialization is skipped.
+- Use Kratos logging helpers with a `module` field matching the package area.
+- Remote gRPC clients live in `internal/pkg/grpcx`; current clients use `grpc.DialInsecure`, require target and timeout when enabled, and may add client metrics/circuit breaker middleware.
+- RabbitMQ publisher targets are explicit constants in `internal/data/rabbitmq_publisher.go`; do not publish without exchange and routing key.
+- Do not hand-edit generated `api/**/*.pb.go`, `api/**/*_grpc.pb.go`, `api/**/*_http.pb.go`, or `cmd/server/wire_gen.go`; change the source proto or Wire injector and regenerate.
+
+## Verification
+- Run `go test ./...` before finishing normal code changes.
+- Run `RUN_SMOKE=1 go test ./tests -run TestSmokeExternalDependencies` only when PostgreSQL, Redis, and MongoDB smoke endpoints are available.
+- After config or provider changes, include tests for disabled mode and missing required config.
+- After proto or DI changes, verify generated files are refreshed and no stale manual edits remain.
+
+## Common Pitfalls
+- README mentions `deploy/k8s`, but that directory is not present in the current repo snapshot; verify deployment paths before documenting or editing them.
+- `make build` uses containerized cross-build targets and expects a `CONTAINER` command such as `docker`.
+- `make run` uses `go run ./cmd/server/...` without `-conf`; prefer the explicit local run command above when testing default config.
+- `RUN_SMOKE=1` tests require external services named `codex-postgres`, `codex-redis`, and `codex-mongo`.
+
+## Maintenance Trigger
+- Update this file when layer boundaries, generator commands, provider registration, config/env conventions, or verification commands change.

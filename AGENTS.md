@@ -30,7 +30,8 @@
 | Task | Command |
 | --- | --- |
 | Run locally | `go run ./cmd/server -conf ./configs` |
-| Full tests | `go test ./...` |
+| Full local verification | `make verify` |
+| Tests only | `make test` |
 | External dependency smoke tests | `RUN_SMOKE=1 go test ./tests -run TestSmokeExternalDependencies` |
 | Scaffold a proto module | `make scaffold-proto PROTO=order/v1/order.proto` |
 | Regenerate proto/API outputs | `make api` |
@@ -38,6 +39,7 @@
 | Install generator tools | `make init` |
 | Build Docker image | `docker build -t web-template-go:local .` |
 | Cross-build binaries | `CONTAINER=docker make build` |
+| CI entrypoint | `.github/workflows/ci.yml` runs `make verify` and `make docker-build` |
 
 ## Common Workflows
 ### Add Or Change Runtime Config
@@ -74,10 +76,11 @@
 - RabbitMQ publisher targets are explicit constants in `internal/data/rabbitmq_publisher.go`; do not publish without exchange and routing key.
 - The scaffold command lives in `cmd/scaffold` with reusable logic in `internal/scaffold`; keep it standard-library based and delegate code generation to Kratos/protoc tooling.
 - The Dockerfile is for the default single-service image path: build `./cmd/server` with Go 1.24 and run it on `scratch` as nonroot with default config copied to `/data/conf`.
+- Keep CI lightweight by wiring it through Makefile targets instead of duplicating command lists in `.github/workflows/ci.yml`.
 - Do not hand-edit generated `api/**/*.pb.go`, `api/**/*_grpc.pb.go`, `api/**/*_http.pb.go`, or `cmd/server/wire_gen.go`; change the source proto or Wire injector and regenerate.
 
 ## Verification
-- Run `go test ./...` before finishing normal code changes.
+- Run `make verify` before finishing normal code changes.
 - Run `RUN_SMOKE=1 go test ./tests -run TestSmokeExternalDependencies` only when PostgreSQL, Redis, and MongoDB smoke endpoints are available.
 - After config or provider changes, include tests for disabled mode and missing required config.
 - After proto or DI changes, verify generated files are refreshed and no stale manual edits remain.

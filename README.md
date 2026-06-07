@@ -40,7 +40,7 @@ go run ./cmd/server -conf ./configs
 ### 3. 运行测试
 
 ```bash
-go test ./...
+make verify
 ```
 
 ## 配置说明
@@ -111,7 +111,10 @@ make api
 make generate
 
 # 全量测试
-go test ./...
+make verify
+
+# Docker 镜像构建
+make docker-build
 ```
 
 ## 模块脚手架

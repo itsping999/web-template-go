@@ -17,6 +17,20 @@ ARM64_OUTPUT             := ./bin/arm64/app
 AMD64_DOCKER_BUILD_IMAGE := docker.io/wyuhsin/go-cross-multiarch:go1.24-ubuntu16.04-20250625
 AMD64_OUTPUT             := ./bin/amd64/app
 
+.PHONY: help
+help:
+	@echo "Targets:"
+	@echo "  make run                         Run the service with the default local config"
+	@echo "  make test                        Run all Go tests"
+	@echo "  make vet                         Run go vet"
+	@echo "  make fmt                         Format Go files"
+	@echo "  make fmt-check                   Check Go formatting without changing files"
+	@echo "  make verify                      Run formatting, vet, and tests"
+	@echo "  make api                         Regenerate proto/API outputs"
+	@echo "  make generate                    Run go generate and go mod tidy"
+	@echo "  make scaffold-proto PROTO=...    Create a Kratos proto and service stub"
+	@echo "  make docker-build                Build the default Docker image"
+
 .PHONY: init
 init:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
@@ -75,7 +89,30 @@ all:
 
 .PHONY: run
 run:
-	go run ${CMD_DIR}/...
+	go run ${CMD_DIR} -conf ./configs
+
+.PHONY: test
+test:
+	go test ./...
+
+.PHONY: vet
+vet:
+	go vet ./...
+
+.PHONY: fmt
+fmt:
+	gofmt -w $$(find . -path ./.git -prune -o -name '*.go' -print)
+
+.PHONY: fmt-check
+fmt-check:
+	@test -z "$$(gofmt -l $$(find . -path ./.git -prune -o -name '*.go' -print))"
+
+.PHONY: verify
+verify: fmt-check vet test
+
+.PHONY: docker-build
+docker-build:
+	docker build --build-arg VERSION=$(VERSION) -t web-template-go:local .
 
 .PHONY: scaffold-proto
 # create a new Kratos proto and service stub, e.g. make scaffold-proto PROTO=order/v1/order.proto

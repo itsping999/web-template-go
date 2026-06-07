@@ -21,14 +21,34 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: true
 
-      - name: Verify
+      - name: Debug
         run: |
-          go clean -cache
-          go vet ./... 2>&1
-          go test ./... 2>&1
-          gofmt -l $(find . -path ./.git -prune -o -name '*.go' -print) 2>&1
+          go version
+          echo "GOTOOLCHAIN=$GOTOOLCHAIN"
+          echo "GOFLAGS=$GOFLAGS"
+          echo "--- files in cmd/server ---"
+          ls -la cmd/server/
+          echo "--- go env ---"
+          go env GOTOOLCHAIN GOFLAGS GONOSUMCHECK GONOSUMDB GOFLAGS
+          echo "--- build ---"
+          go build -v ./cmd/server/ 2>&1
+          echo "BUILD_EXIT=$?"
+          echo "--- vet ---"
+          go vet -v ./cmd/server/ 2>&1
+          echo "VET_EXIT=$?"
+
+      - name: Test
+        run: go test ./... 2>&1
+
+      - name: Format check
+        run: |
+          unformatted=$(gofmt -l $(find . -path ./.git -prune -o -name '*.go' -print))
+          if [ -n "$unformatted" ]; then
+            echo "Files need formatting:"
+            echo "$unformatted"
+            exit 1
+          fi
 
   docker:
     name: Docker

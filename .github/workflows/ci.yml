@@ -20,18 +20,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-
-      - name: Debug
-        run: |
-          go version
-          ls -la cmd/server/
-          echo "--- build ---"
-          go build -v ./cmd/server/ 2>&1 || true
-          echo "--- vet ---"
-          go vet -v ./cmd/server/ 2>&1 || true
-          echo "--- vet all ---"
-          go vet -v ./... 2>&1 || true
+          go-version: '1.24'
 
       - name: Verify
         run: make verify

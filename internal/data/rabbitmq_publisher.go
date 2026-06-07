@@ -22,7 +22,9 @@ type noopGreeterPublisher struct{}
 
 type GreeterCreatedEvent struct {
 	Type    string `json:"type"`
-	Payload string `json:"payload"`
+	Name    string `json:"name"`
+	Message string `json:"message"`
+	Source  string `json:"source"`
 }
 
 func (noopGreeterPublisher) PublishGreeterCreated(context.Context, *biz.Greeter) error {
@@ -47,11 +49,13 @@ func (p *rabbitMQGreeterPublisher) PublishGreeterCreated(ctx context.Context, g 
 	}
 	evt := GreeterCreatedEvent{
 		Type:    "greeter.created",
-		Payload: g.Hello,
+		Name:    g.Name,
+		Message: g.Message,
+		Source:  g.Source,
 	}
 	if err := p.client.Publish(ctx, greeterCreatedExchange, greeterCreatedRoutingKey, evt); err != nil {
 		return err
 	}
-	p.log.WithContext(ctx).Infof("published rabbitmq event type=%s payload=%s", evt.Type, evt.Payload)
+	p.log.WithContext(ctx).Infof("published rabbitmq event type=%s name=%s source=%s", evt.Type, evt.Name, evt.Source)
 	return nil
 }

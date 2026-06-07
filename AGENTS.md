@@ -27,6 +27,7 @@
 | Middleware stack | `internal/server/middleware.go` | HTTP and gRPC share recovery, metadata, metrics, logging, validation, optional tracing, and optional rate limit middleware. |
 | Readiness behavior | `internal/service/system.go` | Disabled dependencies are represented by nil clients and report `skipped`; only `down` makes readiness fail. |
 | Kubernetes examples | `deploy/k8s/` | Keep `kustomization.yaml` limited to built-in Kubernetes kinds; apply `servicemonitor.yaml` separately when the CRD exists. |
+| Example module | `api/helloworld`, `internal/service/greeter.go`, `internal/biz/greeter.go`, `internal/data/greeter.go` | Keep the sample small but representative of transport, business, and outgoing adapter boundaries. |
 
 ## Commands
 | Task | Command |
@@ -81,6 +82,7 @@
 - The Dockerfile is for the default single-service image path: build `./cmd/server` with Go 1.24 and run it on `scratch` as nonroot with default config copied to `/data/conf`.
 - Keep CI lightweight by wiring it through Makefile targets instead of duplicating command lists in `.github/workflows/ci.yml`.
 - K8s defaults should mirror `configs/config.yaml`: optional dependencies disabled, HTTP `/healthz` and `/readyz` probes, HTTP and gRPC ports exposed.
+- The Greeter example is documentation-by-code; keep service limited to transport mapping, biz responsible for domain rules, and data responsible for local/remote outgoing adapters.
 - Do not hand-edit generated `api/**/*.pb.go`, `api/**/*_grpc.pb.go`, `api/**/*_http.pb.go`, or `cmd/server/wire_gen.go`; change the source proto or Wire injector and regenerate.
 
 ## Verification

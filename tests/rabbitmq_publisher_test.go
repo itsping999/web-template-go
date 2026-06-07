@@ -31,7 +31,7 @@ func TestNewGreeterEventPublisherDisabled(t *testing.T) {
 	}
 	cleanup()
 
-	if err := publisher.PublishGreeterCreated(context.Background(), &biz.Greeter{Hello: "demo"}); err != nil {
+	if err := publisher.PublishGreeterCreated(context.Background(), &biz.Greeter{Name: "demo", Message: "Hello demo", Source: "local"}); err != nil {
 		t.Fatalf("expected noop publisher to return nil error, got %v", err)
 	}
 }

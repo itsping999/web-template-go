@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"strings"
 
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
@@ -9,21 +10,26 @@ import (
 
 var (
 	ReasonUserNotFound = "USER_NOT_FOUND"
+	ReasonInvalidName  = "INVALID_NAME"
 
 	// ErrUserNotFound is user not found.
 	ErrUserNotFound = errors.NotFound(ReasonUserNotFound, "user not found")
+	ErrInvalidName  = errors.BadRequest(ReasonInvalidName, "name is required")
 )
 
 // Greeter is a Greeter model.
 type Greeter struct {
-	Hello string
+	Name    string
+	Message string
+	Source  string
 }
 
-// GreeterRepo is a Greater repo.
+// GreeterRepo stores or forwards Greeter domain data.
 type GreeterRepo interface {
 	Save(context.Context, *Greeter) (*Greeter, error)
 }
 
+// GreeterEventPublisher publishes optional Greeter domain events.
 type GreeterEventPublisher interface {
 	PublishGreeterCreated(context.Context, *Greeter) error
 }
@@ -48,12 +54,19 @@ func NewGreeterUsecase(
 	}
 }
 
-// CreateGreeter creates a Greeter, and returns the new Greeter.
-func (uc *GreeterUsecase) CreateGreeter(
-	ctx context.Context,
-	g *Greeter,
-) (*Greeter, error) {
-	uc.log.WithContext(ctx).Infof("CreateGreeter: %v", g.Hello)
+// CreateGreeter normalizes input, persists the greeting through the repo, and
+// emits an optional event after the main flow succeeds.
+func (uc *GreeterUsecase) CreateGreeter(ctx context.Context, name string) (*Greeter, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, ErrInvalidName
+	}
+
+	g := &Greeter{
+		Name:    name,
+		Message: "Hello " + name,
+	}
+	uc.log.WithContext(ctx).Infof("CreateGreeter: %v", g.Name)
 	saved, err := uc.repo.Save(ctx, g)
 	if err != nil {
 		return nil, err

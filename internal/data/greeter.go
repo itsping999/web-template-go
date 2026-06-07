@@ -25,6 +25,21 @@ func NewGreeterRepo(
 }
 
 func (r *greeterRepo) Save(ctx context.Context, g *biz.Greeter) (*biz.Greeter, error) {
-	_ = ctx
-	return g, nil
+	if r.grpcClient != nil {
+		reply, err := r.grpcClient.SayHello(ctx, &v1.HelloRequest{Name: g.Name})
+		if err != nil {
+			return nil, err
+		}
+		return &biz.Greeter{
+			Name:    g.Name,
+			Message: reply.GetMessage(),
+			Source:  "remote",
+		}, nil
+	}
+
+	return &biz.Greeter{
+		Name:    g.Name,
+		Message: g.Message,
+		Source:  "local",
+	}, nil
 }

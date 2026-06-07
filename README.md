@@ -163,6 +163,17 @@ make scaffold-proto PROTO=order/v1/order.proto
 
 其中由 `biz` 定义接口，`data` 实现接口。
 
+### Greeter 示例纵切
+
+当前 `helloworld` 示例刻意保留为轻量纵切，用来展示职责边界：
+
+- `api/helloworld/v1/greeter.proto` 定义 HTTP/gRPC 协议与入参校验。
+- `internal/server/http.go` / `internal/server/grpc.go` 注册传输入口。
+- `internal/service/greeter.go` 只做 protobuf 与领域输入/输出转换。
+- `internal/biz/greeter.go` 负责名字规范化、业务默认消息、主流程编排和可选事件发布。
+- `internal/data/greeter.go` 负责出站适配：默认本地返回；配置远程 gRPC client 后转发到远端 Greeter。
+- `internal/data/rabbitmq_publisher.go` 负责可选事件发布；发布失败只记录日志，不破坏主流程。
+
 ### 默认运行图
 
 默认 `wire` 注入图包含当前模板保留的全部组件：

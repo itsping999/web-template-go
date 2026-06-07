@@ -36,6 +36,7 @@
 | Regenerate proto/API outputs | `make api` |
 | Regenerate Wire and tidy modules | `go generate ./... && go mod tidy` |
 | Install generator tools | `make init` |
+| Build Docker image | `docker build -t web-template-go:local .` |
 | Cross-build binaries | `CONTAINER=docker make build` |
 
 ## Common Workflows
@@ -72,6 +73,7 @@
 - Remote gRPC clients live in `internal/pkg/grpcx`; current clients use `grpc.DialInsecure`, require target and timeout when enabled, and may add client metrics/circuit breaker middleware.
 - RabbitMQ publisher targets are explicit constants in `internal/data/rabbitmq_publisher.go`; do not publish without exchange and routing key.
 - The scaffold command lives in `cmd/scaffold` with reusable logic in `internal/scaffold`; keep it standard-library based and delegate code generation to Kratos/protoc tooling.
+- The Dockerfile is for the default single-service image path: build `./cmd/server` with Go 1.24 and run it on `scratch` as nonroot with default config copied to `/data/conf`.
 - Do not hand-edit generated `api/**/*.pb.go`, `api/**/*_grpc.pb.go`, `api/**/*_http.pb.go`, or `cmd/server/wire_gen.go`; change the source proto or Wire injector and regenerate.
 
 ## Verification
@@ -82,7 +84,7 @@
 
 ## Common Pitfalls
 - README mentions `deploy/k8s`, but that directory is not present in the current repo snapshot; verify deployment paths before documenting or editing them.
-- `make build` uses containerized cross-build targets and expects a `CONTAINER` command such as `docker`.
+- `make build` still uses containerized cross-build targets and expects a `CONTAINER` command such as `docker`; use `docker build -t web-template-go:local .` for the normal image path.
 - `make run` uses `go run ./cmd/server/...` without `-conf`; prefer the explicit local run command above when testing default config.
 - `RUN_SMOKE=1` tests require external services named `codex-postgres`, `codex-redis`, and `codex-mongo`.
 

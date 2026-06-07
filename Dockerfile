@@ -1,24 +1,33 @@
-FROM golang:1.19 AS builder
+FROM golang:1.24 AS builder
 
-COPY . /src
 WORKDIR /src
 
-RUN GOPROXY=https://goproxy.cn make build
+ARG GOPROXY=https://goproxy.cn,https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 
-FROM debian:stable-slim
+COPY go.mod go.sum ./
+RUN go mod download
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-	ca-certificates  \
-        netbase \
-        && rm -rf /var/lib/apt/lists/ \
-        && apt-get autoremove -y && apt-get autoclean -y
+COPY . .
 
-COPY --from=builder /src/bin /app
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build \
+	-trimpath \
+	-ldflags "-s -w -X main.Version=${VERSION}" \
+	-o /out/server \
+	./cmd/server
+
+FROM scratch
 
 WORKDIR /app
 
-EXPOSE 8000
-EXPOSE 9000
-VOLUME /data/conf
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /out/server /app/server
+COPY configs /data/conf
 
-CMD ["./server", "-conf", "/data/conf"]
+EXPOSE 8000 9000
+VOLUME ["/data/conf"]
+
+USER 65532:65532
+ENTRYPOINT ["/app/server"]
+CMD ["-conf", "/data/conf"]

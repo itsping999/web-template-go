@@ -72,11 +72,17 @@ go test ./...
 
 ```bash
 # build
-docker build -t <your-image> .
+docker build --build-arg VERSION=$(git describe --tags --always 2>/dev/null || echo dev) -t web-template-go:local .
 
 # run
-docker run --rm -p 8000:8000 -p 9000:9000 -v </path/to/configs>:/data/conf <your-image>
+docker run --rm -p 8000:8000 -p 9000:9000 web-template-go:local
+
+# run with custom config
+docker run --rm -p 8000:8000 -p 9000:9000 -v </path/to/configs>:/data/conf web-template-go:local
 ```
+
+镜像构建使用 Go 1.24 多阶段构建，运行层为 `scratch` + nonroot 用户，并默认携带 `configs/config.yaml`。
+如需切换 Go module 代理，可追加 `--build-arg GOPROXY=https://proxy.golang.org,direct`。
 
 ## Kubernetes
 

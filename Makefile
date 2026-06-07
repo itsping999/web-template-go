@@ -44,7 +44,7 @@ help:
 	@echo "  make generate                    Run go generate and go mod tidy"
 	@echo "  make scaffold-proto PROTO=...    Create a Kratos proto and service stub"
 	@echo "  make docker-build                Build the default Docker image"
-
+	@echo "  make e2e-smoke                   End-to-end smoke test (build, start, verify endpoints)"
 .PHONY: doctor
 doctor:
 	@missing=0; \
@@ -160,6 +160,10 @@ fmt-check:
 
 .PHONY: verify
 verify: fmt-check vet test
+
+.PHONY: e2e-smoke
+e2e-smoke:
+	./scripts/e2e-smoke.sh
 
 .PHONY: docker-build
 docker-build:

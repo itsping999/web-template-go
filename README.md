@@ -174,9 +174,16 @@ make generated-check
 # 全量测试
 make verify
 
+# 端到端冒烟测试（构建、启动、验证 HTTP 端点）
+make e2e-smoke
+
 # Docker 镜像构建
 make docker-build
 ```
+
+## 贡献
+
+贡献前请阅读 `CONTRIBUTING.md`，其中列出了首次准备、不同改动类型对应的验证命令、生成物规则和 PR 前检查项。
 
 ## 模块脚手架
 
@@ -242,3 +249,7 @@ make scaffold-proto PROTO=order/v1/order.proto
 - `biz` 不依赖 protobuf 生成类型和框架细节
 - 新能力通过清晰构造函数和配置开关接入
 - 保持显式依赖注入，避免隐式全局状态
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.

@@ -4,6 +4,56 @@
 - This is a Go 1.24 Kratos microservice template with HTTP, gRPC, WebSocket, MQTT, RabbitMQ, PostgreSQL, Redis, MongoDB, Kubernetes discovery, metrics, and tracing providers behind config switches.
 - Keep the architecture lightweight: transport adapters call services, services call biz usecases, biz owns interfaces and domain models, data implements outgoing adapters, and `internal/pkg/*` owns infrastructure clients.
 
+## First-Run Dependencies
+
+Before running the project for the first time, install the following tools.
+
+### Go
+
+- Go 1.24.x (see `go.mod`: `go 1.24.0`)
+
+### protoc (Protocol Buffers compiler)
+
+Install via your OS package manager:
+
+```bash
+# macOS
+brew install protobuf
+
+# Ubuntu/Debian
+sudo apt-get update && sudo apt-get install -y protobuf-compiler
+```
+
+### Go Code Generation Tools
+
+Install with `go install` using pinned versions from the Makefile:
+
+```bash
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
+go install github.com/go-kratos/kratos/cmd/kratos/v2@v2.0.0-20260228034312-fe9258d38fd4
+go install github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@v2.0.0-20260228034312-fe9258d38fd4
+go install github.com/go-kratos/kratos/cmd/protoc-gen-go-errors/v2@v2.0.0-20260228034312-fe9258d38fd4
+go install github.com/google/gnostic/cmd/protoc-gen-openapi@v0.7.1
+go install github.com/google/wire/cmd/wire@v0.7.0
+go install github.com/envoyproxy/protoc-gen-validate@v1.3.3
+go install github.com/favadi/protoc-go-inject-tag@v1.4.0
+```
+
+Or simply run `make init` to install all Go tools at once.
+
+After installation, ensure `$(go env GOPATH)/bin` (or `$(go env GOBIN)`) is on your `PATH`, then verify:
+
+```bash
+make doctor
+```
+
+### Optional Tools
+
+- **Docker**: needed for `make docker-build` or `CONTAINER=docker make build`.
+- **kubectl**: needed for verifying or deploying `deploy/k8s` manifests.
+- **External services** (PostgreSQL, Redis, MongoDB, RabbitMQ, MQTT, Kubernetes, Tracing): all disabled by default. Only needed when enabling the corresponding `enabled` config flag or running smoke tests.
+
 ## Project Map
 - `cmd/server/` - process entrypoint, YAML loading, environment overrides, Kratos app assembly, and Wire injectors.
 - `api/` - protobuf definitions and generated `.pb.go`, `_grpc.pb.go`, `_http.pb.go`, validation, errors, and OpenAPI outputs.
@@ -15,6 +65,7 @@
 - `configs/config.yaml` - default runtime config; defaults should keep optional external dependencies disabled for local startup.
 - `deploy/k8s/` - Kubernetes examples; default `kustomization.yaml` should stay usable without optional CRDs.
 - `tests/` - package-level tests for provider behavior, usecase behavior, and smoke tests.
+- `CONTRIBUTING.md` - contributor workflow, change-type checks, generated-file rules, and PR checklist.
 
 ## Source Of Truth
 | Concern | File/Directory | Notes |
@@ -22,6 +73,7 @@
 | Runtime config shape | `internal/conf/config.go`, `internal/server/config.go`, `internal/data/config.go`, `internal/pkg/*` | Add fields here before using them in YAML or env overrides. |
 | Default config | `configs/config.yaml` | Keep defaults runnable without PostgreSQL, Redis, MongoDB, RabbitMQ, MQTT, WebSocket, tracing, or Kubernetes. |
 | Env overrides | `cmd/server/env.go` | Add explicit `APP_...` overrides for new deploy-time config keys. |
+| Contribution workflow | `CONTRIBUTING.md` | Keep change-type verification and generated-file rules aligned with Makefile targets. |
 | First-run tools | `Makefile` (`REQUIRED_TOOLS`, tool version variables, `init`, `doctor`) | Keep README install commands and doctor checks aligned. |
 | Dependency graph | `cmd/server/wire.go`, `cmd/server/wire_gen.go`, provider sets | Update `wire.go` and regenerate `wire_gen.go` after changing providers. |
 | Scaffold command | `cmd/scaffold`, `internal/scaffold` | Wraps Kratos CLI for proto/service generation and prints this template's next wiring steps. |
@@ -44,10 +96,100 @@
 | Regenerate proto/API outputs | `make api` |
 | Regenerate Wire and tidy modules | `go generate ./... && go mod tidy` |
 | Check generated outputs | `make generated-check` |
+| End-to-end smoke test | `make e2e-smoke` |
 | Build Docker image | `docker build -t web-template-go:local .` |
 | Cross-build binaries | `CONTAINER=docker make build` |
 | CI entrypoint | `.github/workflows/ci.yml` runs `make verify` and `make docker-build` |
 | Render Kubernetes examples | `kubectl kustomize deploy/k8s` |
+
+## Architecture
+
+### Layer Responsibilities
+
+```
+server -> service -> biz -> data -> pkg
+```
+
+- `internal/server/` — inbound transport adapters (HTTP, gRPC, WebSocket, MQTT, RabbitMQ). Registers services, sets up routes, and wires middleware.
+- `internal/service/` — application services. Implements generated protobuf server interfaces. Only translates between transport types (protobuf) and domain types (`biz`).
+- `internal/biz/` — domain usecases. Owns domain models, business rules, and defines outgoing interfaces (`GreeterRepo`, `GreeterEventPublisher`). Never imports protobuf or transport-specific packages.
+- `internal/data/` — outbound adapters. Implements `biz` interfaces for databases, caches, remote gRPC clients, and message publishers.
+- `internal/pkg/` — infrastructure provider sets (DB, discovery, gRPC clients, messaging, metrics, tracing, logging). Constructed by Wire.
+
+### How the gRPC Server Starts
+
+The project starts a gRPC server using Kratos transport:
+
+1. `cmd/server/main.go` loads YAML config into `conf.Bootstrap`, applies env overrides, then calls `wireApp()`.
+2. `cmd/server/wire.go` uses Wire to inject `server.NewGRPCServer` (and `NewHTTPServer`, etc.) plus all dependencies.
+3. `internal/server/grpc.go:NewGRPCServer()` creates a `kratos/v2/transport/grpc.Server` with shared middleware, then calls `v1.RegisterGreeterServer(srv, greeter)` to register each service implementation.
+4. `cmd/server/main.go:newApp()` collects all non-nil servers into `kratos.App` which manages their lifecycle (start/stop).
+
+Key config in `configs/config.yaml`:
+
+```yaml
+server:
+  grpc:
+    enabled: true
+    addr: 0.0.0.0:9000
+    timeout: 1s
+```
+
+To add a new gRPC service: implement the generated interface in `internal/service/`, add it to `internal/service/service.go` ProviderSet, and call `v1.RegisterXxxServer(srv, xxx)` in `internal/server/grpc.go`.
+
+### How the Project Connects to Other Services via gRPC
+
+The project uses `internal/pkg/grpcx/` to connect to remote gRPC services:
+
+1. **Config** (`internal/pkg/grpcx/config.go`): defines `ServiceConfig` with `Enabled`, `Target`, `Timeout`, `CircuitBreakerEnabled` per remote service.
+2. **Client factory** (`internal/pkg/grpcx/client.go`): e.g. `NewGreeterClient()` uses `kgrpc.DialInsecure()` to connect, adds metrics and optional circuit breaker middleware. Returns `(nil, func(){}, nil)` when disabled.
+3. **Wire integration** (`internal/pkg/grpcx/provider.go`): exposes `ProviderSet` containing client constructors, included in `internal/pkg/provider.go`.
+4. **Data layer usage** (`internal/data/greeter.go`): receives the `v1.GreeterClient` via constructor injection. When the client is non-nil, `Save()` forwards requests to the remote service; when nil, returns local response.
+
+Config in `configs/config.yaml`:
+
+```yaml
+data:
+  remote_grpc:
+    greeter:
+      enabled: false
+      target: "other-service:9000"
+      timeout: 500ms
+      circuitbreaker_enabled: false
+```
+
+To add a new remote gRPC client:
+
+1. Add a new field to `grpcx.Config` (e.g. `Order ServiceConfig`).
+2. Create a `NewOrderClient()` function in `internal/pkg/grpcx/client.go` following the same pattern as `NewGreeterClient`.
+3. Add it to `grpcx.ProviderSet`.
+4. Add config entry under `data.remote_grpc.order` in `configs/config.yaml`.
+5. Inject the client into the appropriate `internal/data/` constructor.
+
+### Default Wire Injection Graph
+
+Default `wire` injects all template components:
+
+- HTTP/gRPC server
+- WebSocket/MQTT/RabbitMQ server adapters
+- DB/cache/discovery/logging/metrics/tracing/remote client providers
+
+Runtime behavior is controlled by `enabled` config flags, not by removing providers from the graph.
+
+### Greeter Example Module
+
+The `helloworld` example is a vertical slice that demonstrates the full layer boundary pattern:
+
+| Layer | File | Responsibility |
+| --- | --- | --- |
+| Proto/API | `api/helloworld/v1/greeter.proto` | Defines gRPC + HTTP routes, request/response types, and field validation rules. |
+| Server | `internal/server/grpc.go`, `internal/server/http.go` | Registers `GreeterService` on gRPC and HTTP transports. |
+| Service | `internal/service/greeter.go` | Implements `v1.GreeterServer`. Translates protobuf request to domain input, calls `GreeterUsecase`, converts domain output to protobuf response. |
+| Biz | `internal/biz/greeter.go` | Defines `Greeter` domain model, `GreeterRepo` and `GreeterEventPublisher` interfaces, and `GreeterUsecase` with business rules (name normalization, validation, event emission). |
+| Data (Repo) | `internal/data/greeter.go` | Implements `GreeterRepo`. When remote gRPC client is configured, forwards to remote service; otherwise returns local response. |
+| Data (Event) | `internal/data/rabbitmq_publisher.go` | Implements `GreeterEventPublisher`. Publishes to RabbitMQ when enabled; `noopGreeterPublisher` when disabled. |
+
+The data layer currently uses remote gRPC forwarding instead of GORM/DB as the outbound adapter. This demonstrates that the `data` layer abstracts the outbound mechanism: a real module would replace this with GORM CRUD, a cache lookup, or any other persistence strategy. To add a new module with GORM CRUD, the data layer would receive `*gorm.DB` via Wire and implement `biz` repository interfaces with actual database operations.
 
 ## Common Workflows
 ### Add Or Change Runtime Config
@@ -76,6 +218,14 @@
 3. Keep transport details in `internal/server` or `internal/service`.
 4. Test business flow with mocks in `tests/`, following `tests/greeter_usecase_test.go`.
 
+### Add A New Remote gRPC Client
+1. Add a new `ServiceConfig` field to `internal/pkg/grpcx/config.go` Config struct.
+2. Create `New<Service>Client()` in `internal/pkg/grpcx/client.go` following the `NewGreeterClient` pattern: check `Enabled`, validate `Target` and `Timeout`, build metrics/circuit breaker middleware, call `kgrpc.DialInsecure()`.
+3. Add the constructor to `grpcx.ProviderSet` in `internal/pkg/grpcx/provider.go`.
+4. Add config entry under `data.remote_grpc.<service>` in `configs/config.yaml` with `enabled: false`.
+5. Inject the generated client into the appropriate `internal/data/` constructor.
+6. Add tests under `tests/` for disabled mode and connection behavior.
+
 ## Conventions
 - Optional runtime components are controlled by `enabled` config flags instead of being removed from the Wire graph.
 - Constructor cleanup functions must be safe to call even when initialization is skipped.
@@ -86,6 +236,7 @@
 - `make doctor` is the first-run dependency gate; when adding generator tools, update `REQUIRED_TOOLS`, pinned tool version variables, `make init`, README install commands, and the relevant generation target together.
 - The Dockerfile is for the default single-service image path: build `./cmd/server` with Go 1.24 and run it on `scratch` as nonroot with default config copied to `/data/conf`.
 - Keep CI lightweight by wiring it through Makefile targets instead of duplicating command lists in `.github/workflows/ci.yml`.
+- Keep `CONTRIBUTING.md`, `README.md`, and this file aligned when verification commands or generated-file rules change.
 - K8s defaults should mirror `configs/config.yaml`: optional dependencies disabled, HTTP `/healthz` and `/readyz` probes, HTTP and gRPC ports exposed.
 - The Greeter example is documentation-by-code; keep service limited to transport mapping, biz responsible for domain rules, and data responsible for local/remote outgoing adapters.
 - Do not hand-edit generated `api/**/*.pb.go`, `api/**/*_grpc.pb.go`, `api/**/*_http.pb.go`, or `cmd/server/wire_gen.go`; change the source proto or Wire injector and regenerate.

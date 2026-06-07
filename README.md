@@ -26,10 +26,53 @@
 
 ### 1. 安装工具
 
+本地首次运行至少需要：
+
+- Go 1.24.x（项目 `go.mod` 声明 `go 1.24.0`）
+- `protoc`（Protocol Buffers compiler）
+- Kratos/protobuf/Wire 相关 Go 代码生成器
+
+`protoc` 需要通过系统包管理器安装，例如：
+
 ```bash
-go install github.com/go-kratos/kratos/cmd/kratos/v2@latest
-go install github.com/google/wire/cmd/wire@latest
+# macOS
+brew install protobuf
+
+# Ubuntu/Debian
+sudo apt-get update && sudo apt-get install -y protobuf-compiler
 ```
+
+Go 代码生成器使用 `go install` 安装：
+
+```bash
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+go install github.com/go-kratos/kratos/cmd/kratos/v2@latest
+go install github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@latest
+go install github.com/go-kratos/kratos/cmd/protoc-gen-go-errors/v2@latest
+go install github.com/google/gnostic/cmd/protoc-gen-openapi@latest
+go install github.com/google/wire/cmd/wire@latest
+go install github.com/envoyproxy/protoc-gen-validate@latest
+go install github.com/favadi/protoc-go-inject-tag@latest
+```
+
+也可以直接运行：
+
+```bash
+make init
+```
+
+安装后确认 `$(go env GOPATH)/bin` 或 `$(go env GOBIN)` 已加入 `PATH`，然后检查本地工具是否齐全：
+
+```bash
+make doctor
+```
+
+可选工具按使用场景安装：
+
+- Docker：构建/运行镜像、执行 `make docker-build` 或 `CONTAINER=docker make build` 时需要。
+- kubectl：验证或部署 `deploy/k8s` 示例清单时需要。
+- PostgreSQL/Redis/MongoDB/RabbitMQ/MQTT/Kubernetes/Tracing 后端：默认配置均关闭，本地首次启动不需要；启用对应 `enabled` 配置或运行 smoke tests 时再准备。
 
 ### 2. 本地运行
 
@@ -112,6 +155,9 @@ kubectl apply -f deploy/k8s/servicemonitor.yaml
 ## 常用命令
 
 ```bash
+# 检查首次运行依赖
+make doctor
+
 # 创建新的 proto/API 和 service stub（基于 Kratos CLI）
 make scaffold-proto PROTO=order/v1/order.proto
 

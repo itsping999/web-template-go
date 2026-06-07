@@ -7,6 +7,8 @@ CMD_DIR := ./cmd/server
 SCAFFOLD_DIR := ./cmd/scaffold
 
 API_PROTO_FILES=$(shell find api -name *.proto)
+REQUIRED_TOOLS := go protoc kratos protoc-gen-go protoc-gen-go-grpc protoc-gen-go-http protoc-gen-go-errors protoc-gen-openapi protoc-gen-validate protoc-go-inject-tag wire
+OPTIONAL_TOOLS := docker kubectl
 
 ARM_DOCKER_BUILD_IMAGE := docker.io/wyuhsin/go-cross-multiarch:go1.24-ubuntu16.04-20250625
 ARM_OUTPUT             := ./bin/arm/app
@@ -20,6 +22,8 @@ AMD64_OUTPUT             := ./bin/amd64/app
 .PHONY: help
 help:
 	@echo "Targets:"
+	@echo "  make doctor                      Check first-run local tool dependencies"
+	@echo "  make init                        Install Go generator tools"
 	@echo "  make run                         Run the service with the default local config"
 	@echo "  make test                        Run all Go tests"
 	@echo "  make vet                         Run go vet"
@@ -30,6 +34,32 @@ help:
 	@echo "  make generate                    Run go generate and go mod tidy"
 	@echo "  make scaffold-proto PROTO=...    Create a Kratos proto and service stub"
 	@echo "  make docker-build                Build the default Docker image"
+
+.PHONY: doctor
+doctor:
+	@missing=0; \
+	for tool in $(REQUIRED_TOOLS); do \
+		if command -v $$tool >/dev/null 2>&1; then \
+			printf "ok   %s\n" "$$tool"; \
+		else \
+			printf "miss %s\n" "$$tool"; \
+			missing=1; \
+		fi; \
+	done; \
+	for tool in $(OPTIONAL_TOOLS); do \
+		if command -v $$tool >/dev/null 2>&1; then \
+			printf "ok   %s (optional)\n" "$$tool"; \
+		else \
+			printf "skip %s (optional)\n" "$$tool"; \
+		fi; \
+	done; \
+	if [ $$missing -ne 0 ]; then \
+		echo ""; \
+		echo "Install Go generator tools with: make init"; \
+		echo "Install protoc from your OS package manager, for example: brew install protobuf"; \
+		echo 'Ensure $$(go env GOPATH)/bin or $$(go env GOBIN) is on PATH after make init.'; \
+		exit 1; \
+	fi
 
 .PHONY: init
 init:
